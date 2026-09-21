@@ -3,6 +3,7 @@ import pytest
 try:
     from app.aqi.calculator import compute_sub_index, compute_aqi, normalize_raw_reading
 except ImportError:
+    # pyrefly: ignore [missing-import]
     from calculator import compute_sub_index, compute_aqi, normalize_raw_reading
 
 
