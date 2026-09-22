@@ -22,6 +22,7 @@ class RawReading(Base):
     __tablename__ = "raw_readings"
     id = Column(Integer, primary_key=True, autoincrement=True)
     station_id = Column(String, ForeignKey("stations.station_id"), nullable=False)
+    pollutant_id = Column(String, nullable=False)
     min_value = Column(Float, nullable=True)  
     max_value = Column(Float, nullable=True)
     avg_value = Column(Float, nullable=True)

@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db import SessionLocal
 from app.models.db_models import Station
+from app.utils import slugify
 
 STATIONS = [
     ("Bandra Kurla Complex, Mumbai - IITM", "IITM", 19.053536, 72.84643),
@@ -32,12 +33,8 @@ STATIONS = [
     ("Siddharth Nagar-Worli, Mumbai - IITM", "IITM", 19.000083, 72.813993),
     ("Sion, Mumbai - MPCB", "MPCB", 19.047, 72.8746),
     ("Worli, Mumbai - MPCB", "MPCB", 18.9936162, 72.8128113),
+        ("Borivali East, Mumbai - MPCB", "MPCB", 19.23241, 72.86895),
 ]
-
-def slugify(name: str) -> str:
-    slug = name.lower()
-    slug = re.sub(r"[^a-z0-9]+", "-",slug)
-    return slug.strip("-")
 
 def main():
     db = SessionLocal()
