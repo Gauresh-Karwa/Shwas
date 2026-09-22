@@ -17,6 +17,7 @@ class Settings:
     )
 
     TARGET_CITY: str = os.getenv("TARGET_CITY","Mumbai")
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
 
     def validate(self) -> list[str]:
         missing = []
