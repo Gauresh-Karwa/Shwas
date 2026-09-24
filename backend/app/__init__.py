@@ -1,1 +1,1 @@
-"""Shwas backend application package."""
+
