@@ -14,4 +14,5 @@ sqlalchemy>=2.0.0
 alembic>=1.13.0
 psycopg2-binary>=2.9.0
 apscheduler==3.10.4
-google-genai>=0.1.0
+google-genai>=0.1.0
+statsmodels>=0.14.0
