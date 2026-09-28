@@ -15,7 +15,7 @@ Shwas decouples complex spatio-temporal dynamics into dedicated, benchmarked com
 
 ```
 [ Data Ingestion & Sanitization ]
-   ├── CPCB real-time API (data.gov.in)
+   ├── CPCB real-time API (data.gov.in) with exponential backoff retry
    ├── Historical multi-year Kaggle dataset
    └── Physics-based anomaly cleaner (spread ratios, missing values)
           │
@@ -32,6 +32,12 @@ Shwas decouples complex spatio-temporal dynamics into dedicated, benchmarked com
                     ├── NASA FIRMS VIIRS (satellite biomass fire detection)
                     ├── OpenStreetMap Overpass (roads, water, industrial zones)
                     └── Google Gemini (conversational natural language explainer)
+                                 │
+                                 ▼
+                      [ FastAPI REST Service ]
+                         ├── GET /api/interpolate (GNN inference + IDW fallback)
+                         ├── GET /api/forecast/{station_id} (SARIMA + Naive fallback)
+                         └── GET /health (service liveness check)
 ```
 
 ---
@@ -44,7 +50,7 @@ Shwas integrates open data repositories and public satellite telemetry. No propr
 * Source: Open Government Data (OGD) Platform India
 * Portal: [data.gov.in](https://data.gov.in/)
 * Resource Endpoint: [Real-time Air Quality Index API](https://data.gov.in/resource/real-time-air-quality-index)
-* Role: Ingests hourly pollutant concentrations (PM2.5, PM10, SO2, NO2, CO, O3, NH3) across all monitoring stations in the target region.
+* Role: Ingests hourly pollutant concentrations (PM2.5, PM10, SO2, NO2, CO, O3, NH3) across all monitoring stations in the target region. Handled with resilient retry logic and exponential backoff against upstream 503 and rate limit spikes.
 
 ### 2. Historical Indian Air Quality Dataset (2015 to 2020)
 * Source: Kaggle (Curated by Rohit Gupta from official CPCB archives)
@@ -78,6 +84,7 @@ Shwas integrates open data repositories and public satellite telemetry. No propr
 
 ### 1. Ingestion, Cleaning, and CPCB AQI Calculation
 * Location: `backend/app/ingestion/`, `backend/app/aqi/`
+* Resilient Ingestion: Connects to `data.gov.in` with automatic exponential backoff retry for transient network dropouts and upstream server errors (HTTP 500, 502, 503, 504, 429).
 * Automated cleaner: Detects physically implausible spreads between minimum and maximum hourly sensor values using dynamic ratio thresholds. Rejects negative concentration values and handles missing sensor channels gracefully.
 * Official CPCB engine: Implements the exact 16-breakpoint piecewise linear interpolation algorithm published by the Central Pollution Control Board. Automatically normalizes carbon monoxide units between milligrams and micrograms, identifies the dominant pollutant, and assigns official health categories (Good, Satisfactory, Moderate, Poor, Very Poor, Severe).
 
@@ -122,6 +129,67 @@ Fallback strategy: If a newly added sensor station has fewer than 7 days of hist
 * Thermal detection: Queries NASA VIIRS satellites for active thermal signatures within regional bounds, reporting fire counts and aggregate radiative power.
 * Natural language explainer: Structured prompt fed to Gemini Flash models to translate complex sensor numbers into a single clear, friendly sentence for everyday citizens.
 
+### 5. Production REST API Engine
+* Location: `backend/app/main.py`, `backend/app/routers/`
+* Framework: FastAPI with asynchronous routing and automatic OpenAPI documentation.
+* Model Registry: Cached singleton loader in `app/ml/model_registry.py` that loads `gnn_best.pt` once into memory, preventing repetitive disk read overhead across API requests.
+* Live Interpolation Pipeline: `app/interpolation/live.py` snapshots latest verified station AQIs alongside 1-hour and 3-hour lag windows, feeding real-time tensors directly into the GNN engine with seamless fallback to Inverse Distance Weighting if weights are unavailable.
+* Dynamic Forecast Pipeline: `app/forecasting/service.py` evaluates station record density in PostgreSQL, automatically deploying SARIMA for rich histories and Seasonal-Naive for young stations.
+
+---
+
+## REST API Reference
+
+The backend exposes the following core endpoints:
+
+### 1. Health Check
+* Method: `GET`
+* Path: `/health`
+* Description: Confirms API service availability.
+* Response:
+```json
+{
+  "status": "ok"
+}
+```
+
+### 2. Spatio-Temporal AQI Interpolation
+* Method: `GET`
+* Path: `/api/interpolate`
+* Query Parameters:
+  * `lat` (float, required): Target coordinate latitude (e.g. `19.0760`)
+  * `lon` (float, required): Target coordinate longitude (e.g. `72.8777`)
+* Description: Computes continuous spatial AQI estimate for any location using the Spatial GNN, automatically falling back to wind-aware IDW if the neural checkpoint is unavailable.
+* Sample Response:
+```json
+{
+  "lat": 19.076,
+  "lon": 72.8777,
+  "estimated_aqi": 118.4,
+  "model": "gnn",
+  "stations_used": 6
+}
+```
+
+### 3. Station AQI Forecast
+* Method: `GET`
+* Path: `/api/forecast/{station_id}`
+* Query Parameters:
+  * `steps` (int, default `24`, min `1`, max `168`): Number of hours ahead to forecast
+* Description: Generates hourly future AQI predictions using the station-specific SARIMA model or Seasonal-Naive baseline.
+* Sample Response:
+```json
+{
+  "station_id": "kurla-mumbai",
+  "model": "sarima",
+  "steps": 24,
+  "forecast": [
+    { "timestamp": "2026-09-29T00:00:00+00:00", "aqi": 124.5 },
+    { "timestamp": "2026-09-29T01:00:00+00:00", "aqi": 122.0 }
+  ]
+}
+```
+
 ---
 
 ## Repository Structure
@@ -139,14 +207,15 @@ Shwas/
 │   ├── app/
 │   │   ├── aqi/                        # CPCB sub-index math and breakpoints
 │   │   ├── attribution/                # Weather, NASA FIRMS, OSM Overpass, LLM explainer
-│   │   ├── forecasting/                # SARIMA forecaster and seasonal-naive baseline
-│   │   ├── ingestion/                  # CPCB scrapers, data cleaner, scheduler
-│   │   ├── interpolation/              # Haversine distance, bearing, IDW math
-│   │   ├── ml/                         # Spatial GNN architecture (GAT layers, k-NN graph)
+│   │   ├── forecasting/                # SARIMA forecaster, service, and seasonal-naive baseline
+│   │   ├── ingestion/                  # CPCB scrapers with retry logic, data cleaner, scheduler
+│   │   ├── interpolation/              # Haversine distance, bearing, IDW math, live snapshot
+│   │   ├── ml/                         # Spatial GNN architecture, attention layers, model registry
 │   │   ├── models/                     # SQLAlchemy relational database models
-│   │   ├── routers/                    # FastAPI route definitions
+│   │   ├── routers/                    # FastAPI route definitions (interpolate, forecast)
 │   │   ├── config.py                   # Pydantic environment configuration
 │   │   ├── db.py                       # PostgreSQL engine and session management
+│   │   ├── main.py                     # FastAPI application entrypoint
 │   │   └── utils.py                    # Slugification and string utilities
 │   ├── evaluate/
 │   │   ├── evaluate_forecast.py        # Walk-forward 24h temporal benchmark runner
@@ -229,6 +298,22 @@ alembic upgrade head
 python scripts/seed_stations.py
 ```
 
+### 5. Running the Application Services
+
+#### Start the FastAPI Server:
+```bash
+python -m uvicorn app.main:app --reload
+```
+Interactive API documentation will be available at:
+* Swagger UI: `http://localhost:8000/docs`
+* ReDoc: `http://localhost:8000/redoc`
+
+#### Start the Continuous Ingestion Scheduler:
+```bash
+python app/ingestion/scheduler.py
+```
+This runs hourly CPCB polling at minute `:10` with automatic backoff and database synchronization.
+
 ---
 
 ## Verification and Testing
@@ -270,11 +355,3 @@ Runs walk-forward rolling 24-hour evaluation across Mumbai stations:
 ```bash
 python evaluate/evaluate_forecast.py --days 7
 ```
-
----
-
-## Roadmap
-
-1. API Integration: Expose `/api/interpolate` (GNN map inference) and `/api/forecast` (SARIMA station predictions) on the FastAPI service.
-2. Frontend Interface: Interactive Mapbox/Leaflet heatmap visualizing the GNN continuous spatial surface and 24-hour station forecast trajectories.
-3. Multi-City Expansion: Replicate station feature pipelines and seed scripts for Delhi NCR and Bengaluru.
