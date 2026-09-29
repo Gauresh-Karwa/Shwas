@@ -21,6 +21,14 @@ def sarima_forecast(fit_result, steps: int=24) -> list[float]:
     pred = fit_result.forecast(steps=steps)
     return [float(max(0.0, min(500.0, v))) for v in pred]
 
+def sarima_forecast_with_ci(fit_result, steps: int=24, alpha: float=0.05) -> tuple[list[float], list[float], list[float]]:
+    forecast_obj = fit_result.get_forecast(steps=steps)
+    ci = forecast_obj.conf_int(alpha=alpha)
+    mean = [float(max(0.0, min(500.0, v))) for v in forecast_obj.predicted_mean]
+    lower = [float(max(0.0, min(500.0, v))) for v in ci.iloc[:, 0]]
+    upper = [float(max(0.0, min(500.0, v))) for v in ci.iloc[:, 1]]
+    return mean, lower, upper
+
 def series_from_df(df: pd.DataFrame, window_days: int=14) -> pd.Series:
     s = df.set_index('ds')['y']
     s.index = pd.DatetimeIndex(s.index)
