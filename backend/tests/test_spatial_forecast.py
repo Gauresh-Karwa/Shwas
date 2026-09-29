@@ -89,7 +89,7 @@ def test_no_stations_raises_lookup_error(monkeypatch):
 def test_endpoint_route_not_shadowed_by_station_route(monkeypatch):
     import app.routers.forecast as fr
     monkeypatch.setattr(fr, "run_coordinate_forecast",
-                        lambda db, lat, lon, steps: {"lat": lat, "lon": lon, "steps": steps, "forecast": []})
+                        lambda db, lat, lon, steps, uncertainty=False: {"lat": lat, "lon": lon, "steps": steps, "forecast": []})
     from app.db import get_db
     app.dependency_overrides[get_db] = lambda: None
     try:

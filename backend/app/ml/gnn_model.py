@@ -109,9 +109,10 @@ class SpatialGNN(nn.Module):
         x = self.gat2(x, edge_index, edge_weight)
         return self.head(x)
 
-def gnn_interpolate(model: SpatialGNN, query_lat: float, query_lon: float, station_lats: list[float], station_lons: list[float], station_aqis: list[float], hour: int, weekday: int, station_aqis_1h: list[float | None] | None=None, station_aqis_3h: list[float | None] | None=None, device: torch.device | None=None) -> float:
-    if device is None:
-        device = next(model.parameters()).device
+def _build_feature_tensor(query_lat: float, query_lon: float, station_lats: list[float], station_lons: list[float], station_aqis: list[float], hour: int, weekday: int, station_aqis_1h: list[float | None] | None=None, station_aqis_3h: list[float | None] | None=None, device: torch.device | None=None) -> tuple[torch.Tensor, list[float], list[float]]:
+    """Shared feature-building for gnn_interpolate() and the MC-dropout
+    uncertainty variant below — same node ordering (query point first,
+    then stations), same normalisation, same lag fallback rules."""
     hs, hc, ws, wc = temporal_encoding(hour, weekday)
     all_lats = [query_lat] + list(station_lats)
     all_lons = [query_lon] + list(station_lons)
@@ -125,8 +126,35 @@ def gnn_interpolate(model: SpatialGNN, query_lat: float, query_lon: float, stati
         lag3_norm = lag3 / AQI_MAX if lag3 is not None else aqi_norm
         feats.append([normalise_lat(lat), normalise_lon(lon), aqi_norm, lag1_norm, lag3_norm, hs, hc, ws, wc])
     feat_tensor = torch.tensor(feats, dtype=torch.float32, device=device)
+    return feat_tensor, all_lats, all_lons
+
+
+def gnn_interpolate(model: SpatialGNN, query_lat: float, query_lon: float, station_lats: list[float], station_lons: list[float], station_aqis: list[float], hour: int, weekday: int, station_aqis_1h: list[float | None] | None=None, station_aqis_3h: list[float | None] | None=None, device: torch.device | None=None) -> float:
+    if device is None:
+        device = next(model.parameters()).device
+    feat_tensor, all_lats, all_lons = _build_feature_tensor(query_lat, query_lon, station_lats, station_lons, station_aqis, hour, weekday, station_aqis_1h, station_aqis_3h, device)
     model.eval()
     with torch.no_grad():
         preds = model(feat_tensor, all_lats, all_lons)
     predicted_aqi = preds[0, 0].item() * AQI_MAX
     return max(0.0, min(AQI_MAX, predicted_aqi))
+
+
+def gnn_interpolate_with_uncertainty(model: SpatialGNN, query_lat: float, query_lon: float, station_lats: list[float], station_lons: list[float], station_aqis: list[float], hour: int, weekday: int, station_aqis_1h: list[float | None] | None=None, station_aqis_3h: list[float | None] | None=None, device: torch.device | None=None, n_samples: int=20) -> tuple[float, float]:
+    if device is None:
+        device = next(model.parameters()).device
+    feat_tensor, all_lats, all_lons = _build_feature_tensor(query_lat, query_lon, station_lats, station_lons, station_aqis, hour, weekday, station_aqis_1h, station_aqis_3h, device)
+    was_training = model.training
+    model.train()
+    samples: list[float] = []
+    try:
+        with torch.no_grad():
+            for _ in range(max(1, n_samples)):
+                preds = model(feat_tensor, all_lats, all_lons)
+                samples.append(preds[0, 0].item() * AQI_MAX)
+    finally:
+        model.train(was_training)
+    sample_tensor = torch.tensor(samples)
+    mean_aqi = max(0.0, min(AQI_MAX, sample_tensor.mean().item()))
+    std_aqi = sample_tensor.std(unbiased=False).item() if len(samples) > 1 else 0.0
+    return mean_aqi, std_aqi
