@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.routers.interpolate import router as interpolate_router
 from app.routers.forecast import router as forecast_router
+from app.routers.wards import router as wards_router
 
 app = FastAPI(
     title="Shwas AQI API",
@@ -10,6 +11,7 @@ app = FastAPI(
 
 app.include_router(interpolate_router)
 app.include_router(forecast_router)
+app.include_router(wards_router)
 
 
 @app.get("/health", tags=["meta"])
