@@ -48,12 +48,19 @@ Shwas solves these challenges by combining Graph Attention Networks for continuo
                     └── Google Gemini (natural language citizen heads-up)
                                  │
                                  ▼
+                 [ Municipal Ward Exposure Engine ]
+                    ├── 24 BMC administrative ward boundary polygons
+                    ├── Pure-Python Shoelace formula for area-weighted centroids
+                    ├── Spatial GNN / IDW live centroid interpolation
+                    └── Census 2011 population aggregation by CPCB severity category
+                                 │
+                                 ▼
                       [ FastAPI REST Service ]
                          ├── GET /api/interpolate
                          ├── GET /api/forecast/{station_id}
                          ├── GET /api/forecast/coordinate
+                         ├── GET /api/wards
                          └── GET /health
-```
 
 ---
 
@@ -146,6 +153,9 @@ Shwas relies on publicly available, open-access datasets and APIs. No proprietar
 7. Google Gemini API
    * Source: Google DeepMind ([ai.google.dev](https://ai.google.dev/))
    * Role: Translates multi-sensor telemetry (AQI, wind vectors, fire anomalies, news) into single-sentence natural language citizen summaries.
+8. Municipal Ward Boundaries and Census 2011 Population
+   * Source: Bharatlas Open Administrative Boundaries ([bharatlas.com](https://bharatlas.com/)) and Census of India 2011
+   * Role: Supplies GeoJSON polygon boundaries for all 24 Brihanmumbai Municipal Corporation (BMC) administrative wards along with ward-level Census 2011 population counts for municipal health risk exposure mapping.
 
 ---
 
@@ -224,6 +234,46 @@ The FastAPI service exposes the following endpoints:
 }
 ```
 
+### 5. Municipal Ward-Level Population Exposure
+* `GET /api/wards`
+* Parameters: None
+* Response:
+```json
+{
+  "status": "ok",
+  "stations_used": 25,
+  "wards": [
+    {
+      "ward_id": "E",
+      "ward_name": "Byculla",
+      "population": 393286,
+      "census_year": 2011,
+      "lat": 18.973,
+      "lon": 72.834,
+      "aqi": 121.2,
+      "category": "Moderate",
+      "method": "gnn"
+    },
+    {
+      "ward_id": "M/W",
+      "ward_name": "Chembur (West)",
+      "population": 411893,
+      "census_year": 2011,
+      "lat": 19.062,
+      "lon": 72.899,
+      "aqi": 119.1,
+      "category": "Moderate",
+      "method": "gnn"
+    }
+  ],
+  "population_by_category": {
+    "Moderate": 3145880,
+    "Satisfactory": 9296493
+  },
+  "total_population": 12442373
+}
+```
+
 ---
 
 ## Repository Structure
@@ -238,6 +288,7 @@ Shwas/
 │   ├── alembic.ini
 │   ├── requirements.txt                # Python backend dependencies
 │   ├── app/
+│   │   ├── analytics/                  # Geo calculations, Shoelace centroid, ward population exposure
 │   │   ├── aqi/                        # Official CPCB sub-index breakpoints and math
 │   │   ├── attribution/                # Open-Meteo, OpenWeather, NASA FIRMS, OSM Overpass, Gemini LLM
 │   │   ├── forecasting/                # SARIMA/SARIMAX forecaster, coordinate spatial chainer, baselines
@@ -245,7 +296,7 @@ Shwas/
 │   │   ├── interpolation/              # Haversine distance, bearing, IDW math, live snapshot
 │   │   ├── ml/                         # Spatial GNN architecture, GAT attention, model registry
 │   │   ├── models/                     # SQLAlchemy relational schema models
-│   │   ├── routers/                    # FastAPI route controllers (interpolate, forecast)
+│   │   ├── routers/                    # FastAPI route controllers (interpolate, forecast, wards)
 │   │   ├── config.py                   # Pydantic configuration and environment variables
 │   │   ├── db.py                       # PostgreSQL engine and session factory
 │   │   ├── main.py                     # FastAPI application entrypoint
@@ -264,6 +315,7 @@ Shwas/
 │   │   ├── evaluate_sarimax_weather.py      # Walk-forward benchmark for weather-aware SARIMAX
 │   │   ├── evaluate_uncertainty_calibration.py # Calibration benchmark for CI and MC-dropout
 │   │   ├── fetch_live_sample.py        # Diagnostic script for live CPCB API response
+│   │   ├── load_ward_data.py           # Seeds 24 BMC ward boundaries (with lon/lat swap) and Census populations
 │   │   ├── merge_historical.py         # Ingests and cleans Kaggle historical archive
 │   │   ├── seed_stations.py            # Seeds Mumbai monitoring station coordinates
 │   │   └── train_gnn.py                # GNN training pipeline with Cosine Annealing
@@ -272,9 +324,12 @@ Shwas/
 │       ├── test_calculator.py          # Unit tests for CPCB 16-breakpoint sub-index logic
 │       ├── test_cleaner.py             # Unit tests for physical ratio anomaly filters
 │       ├── test_forecasting.py         # Unit tests for SARIMA windowing and fit stability
+│       ├── test_geo.py                 # Unit tests for Shoelace polygon area and centroid math
 │       ├── test_gnn.py                 # Unit tests for GNN tensor shapes and attention layers
 │       ├── test_idw.py                 # Unit tests for Haversine distances and wind weights
 │       ├── test_integration_api.py     # End-to-end integration tests on FastAPI routers
+│       ├── test_integration_wards.py   # End-to-end integration tests on GET /api/wards
+│       ├── test_load_ward_data.py      # Unit tests for GeoJSON coordinate swapping and ward data
 │       ├── test_open_meteo_client.py   # Unit tests for Open-Meteo ERA5 parser and schema
 │       ├── test_sarimax_weather.py     # Unit tests for SARIMAX exog alignment and fitting
 │       ├── test_spatial_forecast.py    # Unit tests for coordinate forecast chaining
@@ -333,6 +388,9 @@ alembic upgrade head
 
 # Seed initial Mumbai monitoring stations metadata
 python scripts/seed_stations.py
+
+# Seed 24 BMC administrative ward boundaries and Census 2011 populations
+python scripts/load_ward_data.py
 ```
 
 ### 5. Running the Application Services
@@ -355,7 +413,7 @@ This runs hourly CPCB polling at minute `:10` with automatic backoff and databas
 
 ## Verification and Testing
 
-The repository contains an automated test suite with **89 passing unit and integration tests** covering all mathematical, physical, neural, and API components.
+The repository contains an automated test suite with **114 passing unit and integration tests** covering all mathematical, physical, neural, geospatial, and API components.
 
 Run the test suite:
 ```bash
@@ -365,21 +423,24 @@ python -m pytest tests/ -v
 Expected output:
 ```text
 ============================= test session starts =============================
-collected 89 items
+collected 114 items
 
-tests/test_attribution.py .......                                        [  7%]
-tests/test_calculator.py .............                                   [ 22%]
-tests/test_cleaner.py .......                                            [ 30%]
-tests/test_forecasting.py ....                                           [ 34%]
-tests/test_gnn.py .......                                                [ 42%]
-tests/test_idw.py .........                                              [ 52%]
-tests/test_integration_api.py ...........                                [ 65%]
-tests/test_open_meteo_client.py .......                                  [ 73%]
-tests/test_sarimax_weather.py .....                                      [ 78%]
-tests/test_spatial_forecast.py ......                                    [ 85%]
+tests/test_attribution.py .......                                        [  6%]
+tests/test_calculator.py .............                                   [ 17%]
+tests/test_cleaner.py .......                                            [ 23%]
+tests/test_forecasting.py ....                                           [ 27%]
+tests/test_geo.py .......                                                [ 33%]
+tests/test_gnn.py .......                                                [ 39%]
+tests/test_idw.py .........                                              [ 47%]
+tests/test_integration_api.py ...........                                [ 57%]
+tests/test_integration_wards.py ......                                   [ 62%]
+tests/test_load_ward_data.py .......                                     [ 68%]
+tests/test_open_meteo_client.py .............                            [ 80%]
+tests/test_sarimax_weather.py .....                                      [ 84%]
+tests/test_spatial_forecast.py ......                                    [ 89%]
 tests/test_uncertainty.py ............                                   [100%]
 
-============================== 89 passed in 9.17s ==============================
+============================= 114 passed in 9.84s ==============================
 ```
 
 ---
