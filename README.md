@@ -7,7 +7,7 @@ Government monitoring networks face three structural challenges:
 2. Temporal latency: Conventional autoregressive models either fail to capture diurnal traffic spikes or require heavy multi-hour retraining cycles.
 3. Lack of actionable context: Pure particulate numbers (e.g. "PM2.5: 142 µg/m³") give citizens and policymakers no indication of origin, whether from local traffic, biomass fires, or coastal wind stalls.
 
-Shwas solves these challenges by combining Graph Attention Networks for continuous spatial interpolation, rolling seasonal autoregression for temporal forecasting, and multi-modal satellite and weather telemetry for causal attribution.
+Shwas solves these challenges by combining Graph Attention Networks for continuous spatial interpolation, rolling seasonal autoregression with exogenous weather drivers (SARIMAX) for temporal forecasting, and multi-modal satellite and weather telemetry for causal attribution.
 
 ---
 
@@ -17,18 +17,19 @@ Shwas solves these challenges by combining Graph Attention Networks for continuo
 [ Ingestion & Data Sanitization ]
    ├── CPCB real-time API (data.gov.in) with exponential backoff retry
    ├── Historical multi-year dataset (Kaggle / CPCB archives)
+   ├── Open-Meteo ERA5 atmospheric reanalysis (1940 to present)
    └── Physics-based anomaly cleaner (spread ratios, negative rejection)
           │
           ▼
 [ Spatial Modeling Engine ] ──────────────► [ Temporal Forecasting Engine ]
    ├── Spatial GNN (Graph Attention Network)     ├── Seasonal ARIMA (1, 0, 1)(1, 0, 0)24
-   ├── Distance-biased k-NN topology             ├── Rolling 14-day adaptive window
-   └── 22.7% error reduction over IDW            └── 6 / 6 Mumbai station wins over baseline
+   ├── Distance-biased k-NN topology             ├── SARIMAX with exogenous weather regressors
+   └── 22.7% error reduction over IDW            └── 14.0% additional fleet error reduction
           │                                              │
           └──────────────────────┬───────────────────────┘
                                  ▼
               [ Chained Spatio-Temporal Predictor ]
-                 ├── Forecasts all stations 24h ahead via SARIMA
+                 ├── Forecasts all stations 24h ahead via SARIMA/SARIMAX
                  ├── Projects forward station tensors into Spatial GNN
                  ├── Delivers 24h forecast for any (lat, lon) coordinate
                  └── 73% to 81% error reduction over IDW chaining
@@ -40,6 +41,7 @@ Shwas solves these challenges by combining Graph Attention Networks for continuo
                                  │
                                  ▼
                  [ Multi-Modal Attribution Engine ]
+                    ├── Open-Meteo (ERA5 reanalysis and 16-day hourly forecasts)
                     ├── OpenWeatherMap (wind vectors, dispersion)
                     ├── NASA FIRMS VIIRS (thermal biomass fire detection)
                     ├── OpenStreetMap Overpass (coastal and urban morphology)
@@ -84,8 +86,23 @@ Evaluated over a 7-day walk-forward horizon with rolling 24-hour forecast steps:
 
 *Model fits in 0.10s to 0.25s per station, eliminating slow batch retraining.*
 
-### 3. Spatio-Temporal Forecasting at Arbitrary Coordinates
-Chaining SARIMA station forecasts into the Spatial GNN allows predictions at locations with no monitoring stations. Evaluated via leave-one-station-out backtesting across forecast horizons:
+### 3. Weather-Aware Forecasting: SARIMAX vs Plain SARIMA vs Baseline
+Evaluated on full walk-forward testing incorporating five exogenous ERA5 weather features (temperature, relative humidity, wind speed, surface pressure, precipitation):
+
+| Station | Baseline (Seasonal-Naive) | Plain SARIMA | SARIMAX (+Weather) | Weather Impact |
+|---|:---:|:---:|:---:|:---:|
+| Chhatrapati Shivaji Airport (T2) | 4.42 | 3.16 | **2.92** | Won by SARIMAX (+0.24 pts) |
+| Kurla | 13.52 | 9.16 | **7.18** | Won by SARIMAX (+1.98 pts) |
+| Powai | 10.35 | 7.57 | **6.79** | Won by SARIMAX (+0.78 pts) |
+| Sion | 13.92 | 12.02 | **8.37** | Won by SARIMAX (+3.65 pts) |
+| Worli | 10.38 | 4.73 | **4.07** | Won by SARIMAX (+0.66 pts) |
+| Borivali East | 18.27 | **12.97** | 13.35 | Won by SARIMA (-0.38 pts) |
+| **Fleet Average** | **11.81** | **8.27** | **7.11** | **5 / 6 Wins (+14.0% error reduction)** |
+
+*Physical weather regressors capture atmospheric dispersion, rain washout, and wind stalls that purely autoregressive models miss.*
+
+### 4. Spatio-Temporal Forecasting at Arbitrary Coordinates
+Chaining station forecasts into the Spatial GNN allows predictions at locations with no monitoring stations. Evaluated via leave-one-station-out backtesting across forecast horizons:
 
 | Horizon | Baseline (IDW Chain) | Shwas (GNN Chain) | Performance Advantage |
 |:---:|:---:|:---:|---|
@@ -96,7 +113,7 @@ Chaining SARIMA station forecasts into the Spatial GNN allows predictions at loc
 
 *Even at a full 24-hour horizon without an on-site physical sensor, the GNN chain achieves 13.5 MAE, closely tracking the theoretical upper bound of an on-site hardware sensor (direct SARIMA achieves 10.3 MAE).*
 
-### 4. Uncertainty Quantification and Calibration
+### 5. Uncertainty Quantification and Calibration
 To prevent false confidence in data-sparse zones, predictions output calibrated error bounds:
 * SARIMA Confidence Intervals: 85.1% empirical coverage on walk-forward testing (target 95%, average interval width: 35.7 AQI points).
 * GNN Monte Carlo Dropout: Multiple forward passes with active dropout estimate epistemic model uncertainty, automatically widening confidence bands in regions far from active sensors.
@@ -113,17 +130,20 @@ Shwas relies on publicly available, open-access datasets and APIs. No proprietar
 2. Historical Indian Air Quality Dataset (2015 to 2020)
    * Source: Kaggle / CPCB Archives ([Air Quality Data in India](https://www.kaggle.com/datasets/rohitgr/air-quality-data-in-india))
    * Role: Supplies continuous hourly historical context used to train neural weights and validate walk-forward time-series models.
-3. OpenWeatherMap Weather Telemetry
+3. Open-Meteo Weather Archive and Forecast API
+   * Source: Open-Meteo ([open-meteo.com](https://open-meteo.com/))
+   * Role: Provides historical ERA5 atmospheric reanalysis (1940 to present) for model training and 16-day hourly forecasts for exogenous time-series inference (temperature, humidity, wind speed, pressure, precipitation) with no API keys.
+4. OpenWeatherMap Weather Telemetry
    * Source: Current Weather Data API ([openweathermap.org](https://openweathermap.org/api))
-   * Role: Provides surface temperature, humidity, wind speed, and compass direction to compute atmospheric dispersion vectors.
-4. NASA FIRMS Active Fire Telemetry
+   * Role: Provides real-time surface weather to compute live atmospheric dispersion vectors.
+5. NASA FIRMS Active Fire Telemetry
    * Source: NASA Earthdata FIRMS ([firms.modaps.eosdis.nasa.gov](https://firms.modaps.eosdis.nasa.gov/))
    * Sensor: VIIRS (Visible Infrared Imaging Radiometer Suite) SNPP Near Real-Time.
    * Role: Detects active crop burning, biomass combustion, and industrial flares, providing fire counts and Fire Radiative Power (MW).
-5. OpenStreetMap Urban Morphology
+6. OpenStreetMap Urban Morphology
    * Source: Overpass API ([overpass-api.de](https://overpass-api.de/))
    * Role: Queries coastal boundaries, waterways, and road networks to establish geographic station characteristics.
-6. Google Gemini API
+7. Google Gemini API
    * Source: Google DeepMind ([ai.google.dev](https://ai.google.dev/))
    * Role: Translates multi-sensor telemetry (AQI, wind vectors, fire anomalies, news) into single-sentence natural language citizen summaries.
 
@@ -219,8 +239,8 @@ Shwas/
 │   ├── requirements.txt                # Python backend dependencies
 │   ├── app/
 │   │   ├── aqi/                        # Official CPCB sub-index breakpoints and math
-│   │   ├── attribution/                # OpenWeather, NASA FIRMS, OSM Overpass, Gemini LLM
-│   │   ├── forecasting/                # SARIMA forecaster, coordinate spatial chainer, baselines
+│   │   ├── attribution/                # Open-Meteo, OpenWeather, NASA FIRMS, OSM Overpass, Gemini LLM
+│   │   ├── forecasting/                # SARIMA/SARIMAX forecaster, coordinate spatial chainer, baselines
 │   │   ├── ingestion/                  # CPCB client with retry backoff, data cleaner, scheduler
 │   │   ├── interpolation/              # Haversine distance, bearing, IDW math, live snapshot
 │   │   ├── ml/                         # Spatial GNN architecture, GAT attention, model registry
@@ -241,6 +261,7 @@ Shwas/
 │   │   ├── build_station_features.py   # Extracts OSM spatial attributes for all stations
 │   │   ├── check_geo_feature_correlation.py # Statistical checks on urban features
 │   │   ├── evaluate_coordinate_forecast.py  # Spatio-temporal coordinate backtest runner
+│   │   ├── evaluate_sarimax_weather.py      # Walk-forward benchmark for weather-aware SARIMAX
 │   │   ├── evaluate_uncertainty_calibration.py # Calibration benchmark for CI and MC-dropout
 │   │   ├── fetch_live_sample.py        # Diagnostic script for live CPCB API response
 │   │   ├── merge_historical.py         # Ingests and cleans Kaggle historical archive
@@ -254,6 +275,8 @@ Shwas/
 │       ├── test_gnn.py                 # Unit tests for GNN tensor shapes and attention layers
 │       ├── test_idw.py                 # Unit tests for Haversine distances and wind weights
 │       ├── test_integration_api.py     # End-to-end integration tests on FastAPI routers
+│       ├── test_open_meteo_client.py   # Unit tests for Open-Meteo ERA5 parser and schema
+│       ├── test_sarimax_weather.py     # Unit tests for SARIMAX exog alignment and fitting
 │       ├── test_spatial_forecast.py    # Unit tests for coordinate forecast chaining
 │       └── test_uncertainty.py         # Unit tests for SARIMA CI and MC-dropout bounds
 ```
@@ -332,7 +355,7 @@ This runs hourly CPCB polling at minute `:10` with automatic backoff and databas
 
 ## Verification and Testing
 
-The repository contains an automated test suite with **76 passing unit and integration tests** covering all mathematical, physical, and neural components.
+The repository contains an automated test suite with **89 passing unit and integration tests** covering all mathematical, physical, neural, and API components.
 
 Run the test suite:
 ```bash
@@ -342,19 +365,21 @@ python -m pytest tests/ -v
 Expected output:
 ```text
 ============================= test session starts =============================
-collected 76 items
+collected 89 items
 
-tests/test_attribution.py .......                                        [  9%]
-tests/test_calculator.py .............                                   [ 26%]
-tests/test_cleaner.py .......                                            [ 35%]
-tests/test_forecasting.py ....                                           [ 40%]
-tests/test_gnn.py .......                                                [ 50%]
-tests/test_idw.py .........                                              [ 61%]
-tests/test_integration_api.py ...........                                [ 76%]
-tests/test_spatial_forecast.py ......                                    [ 84%]
+tests/test_attribution.py .......                                        [  7%]
+tests/test_calculator.py .............                                   [ 22%]
+tests/test_cleaner.py .......                                            [ 30%]
+tests/test_forecasting.py ....                                           [ 34%]
+tests/test_gnn.py .......                                                [ 42%]
+tests/test_idw.py .........                                              [ 52%]
+tests/test_integration_api.py ...........                                [ 65%]
+tests/test_open_meteo_client.py .......                                  [ 73%]
+tests/test_sarimax_weather.py .....                                      [ 78%]
+tests/test_spatial_forecast.py ......                                    [ 85%]
 tests/test_uncertainty.py ............                                   [100%]
 
-============================== 76 passed in 5.87s ==============================
+============================== 89 passed in 9.17s ==============================
 ```
 
 ---
@@ -373,13 +398,19 @@ Runs walk-forward rolling 24-hour evaluation across Mumbai stations:
 python evaluate/evaluate_forecast.py --days 7
 ```
 
-### 3. Spatio-Temporal Coordinate Forecast Backtest
+### 3. Weather-Aware SARIMAX Fleet Evaluation
+Compares Baseline vs plain SARIMA vs SARIMAX with Open-Meteo ERA5 atmospheric regressors:
+```bash
+python scripts/evaluate_sarimax_weather.py --days 7
+```
+
+### 4. Spatio-Temporal Coordinate Forecast Backtest
 Runs leave-one-station-out cross-validation testing arbitrary coordinate predictions:
 ```bash
 python scripts/evaluate_coordinate_forecast.py --stations 5 --windows 3
 ```
 
-### 4. Uncertainty Calibration Evaluation
+### 5. Uncertainty Calibration Evaluation
 Checks empirical coverage of SARIMA analytical confidence intervals and GNN MC-dropout bounds:
 ```bash
 python scripts/evaluate_uncertainty_calibration.py

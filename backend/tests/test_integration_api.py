@@ -12,12 +12,11 @@ from app.db import Base, get_db
 from app.main import app
 from app.models.db_models import Station, StationAQI
 
-# Three stations inside the GNN's normalisation bounds (LAT 18.85-19.3,
-# LON 72.75-73.0), forming a small triangle around a query point.
+
 STATIONS = [
     ("STN_A", "Station A", 19.00, 72.80),
     ("STN_B", "Station B", 19.10, 72.90),
-    ("STN_C", "Station C", 19.05, 72.82),  # seeded with < 7 days of history
+    ("STN_C", "Station C", 19.05, 72.82),  
 ]
 QUERY_LAT, QUERY_LON = 19.05, 72.85
 
