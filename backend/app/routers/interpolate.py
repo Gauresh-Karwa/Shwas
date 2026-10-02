@@ -10,6 +10,11 @@ from app.ml.model_registry import get_gnn_model
 router = APIRouter(prefix="/api", tags=["interpolation"])
 
 
+@router.get("/stations")
+def get_stations(db: Session = Depends(get_db)):
+    snapshot = get_live_snapshot(db)
+    return snapshot
+
 @router.get("/interpolate")
 def interpolate(
     lat: float = Query(..., ge=-90, le=90, description="Query latitude"),
