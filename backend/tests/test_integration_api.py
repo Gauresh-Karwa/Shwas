@@ -87,9 +87,12 @@ class TestPureIntegrationNoGnnCheckpoint:
     def _no_checkpoint(self, monkeypatch):
         import app.routers.interpolate as interp_router
         import app.forecasting.spatial as spatial_module
+        import app.forecasting.service as svc
 
         monkeypatch.setattr(interp_router, "get_gnn_model", lambda: None)
         monkeypatch.setattr(spatial_module, "get_gnn_model", lambda: None)
+        monkeypatch.setattr(svc, "get_historical_weather", lambda *a, **k: __import__('pandas').DataFrame())
+        monkeypatch.setattr(svc, "get_forecast_weather", lambda *a, **k: __import__('pandas').DataFrame())
 
     def test_forecast_station_uses_real_sarima(self, client, seeded_db):
         r = client.get("/api/forecast/STN_A", params={"steps": 6})
@@ -196,7 +199,7 @@ class TestIntegrationWithRealGnn:
         r = client.get("/api/forecast/STN_A", params={"steps": 4, "uncertainty": "true"})
         assert r.status_code == 200
         body = r.json()
-        assert body["model"] == "sarima"
+        assert body["model"] in ("sarima", "sarimax")
         for p in body["forecast"]:
             assert p["aqi_lower"] <= p["aqi"] <= p["aqi_upper"]
 

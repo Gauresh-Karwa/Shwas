@@ -8,6 +8,8 @@ from app.attribution.news_search import search_air_quality_news
 from app.attribution.llm_explainer import get_explanation
 from app.config import settings
 from app.routers.wards import router as wards_router
+from app.routers.attribution import router as attribution_router
+from app.routers.recommendations import router as recommendations_router
 
 app = FastAPI(
     title="Shwas AQI API",
@@ -26,6 +28,8 @@ app.add_middleware(
 app.include_router(interpolate_router)
 app.include_router(forecast_router)
 app.include_router(wards_router)
+app.include_router(attribution_router)
+app.include_router(recommendations_router)
 
 
 @app.get("/health", tags=["meta"])

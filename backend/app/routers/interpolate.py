@@ -12,8 +12,27 @@ router = APIRouter(prefix="/api", tags=["interpolation"])
 
 @router.get("/stations")
 def get_stations(db: Session = Depends(get_db)):
+    from app.models.db_models import CleanedReading
     snapshot = get_live_snapshot(db)
+
+    # Enrich each station with its latest individual pollutant readings
+    POLLUTANTS = {"PM2.5": "pm25", "PM10": "pm10", "NO2": "no2", "SO2": "so2"}
+    for entry in snapshot:
+        sid = entry["station_id"]
+        for cpcb_id, field in POLLUTANTS.items():
+            latest = (
+                db.query(CleanedReading)
+                .filter(
+                    CleanedReading.station_id == sid,
+                    CleanedReading.pollutant_id == cpcb_id,
+                )
+                .order_by(CleanedReading.timestamp.desc())
+                .first()
+            )
+            entry[field] = round(float(latest.avg_value), 1) if latest and latest.avg_value is not None else None
+
     return snapshot
+
 
 @router.get("/interpolate")
 def interpolate(
