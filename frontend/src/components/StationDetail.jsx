@@ -204,7 +204,14 @@ export function StationDetailCard({ station, forecast, forecastLoading, attribut
 
       {/* Forecast */}
       <div className="sdc__forecast">
-        <div className="sdc__sect-label">Next 24 hours (SARIMA forecast)</div>
+        <div className="sdc__sect-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          Next 24 hours
+          <span style={{
+            fontSize: 10, fontWeight: 600, padding: '1px 7px',
+            borderRadius: 99, background: 'var(--light-sage)',
+            color: 'var(--forest)', border: '1px solid var(--sage)',
+          }}>SARIMAX · weather-aware</span>
+        </div>
         {forecastLoading ? (
           <span className="skeleton" style={{ width: '100%', height: 80, marginBottom: 8, display: 'block' }} />
         ) : (
@@ -222,9 +229,10 @@ export function StationDetailCard({ station, forecast, forecastLoading, attribut
 export function EstimateCard({ estimate, onClose }) {
   if (!estimate) return null;
 
-  const { lat, lon, estimated_aqi, model, stations_used } = estimate;
+  const { lat, lon, estimated_aqi, model, stations_used, uncertainty_std } = estimate;
   const aqi = Math.round(estimated_aqi ?? 0);
   const cat = getCategory(aqi);
+  const uncert = uncertainty_std != null ? Math.round(uncertainty_std) : null;
 
   return (
     <div className="est-card">
@@ -249,6 +257,12 @@ export function EstimateCard({ estimate, onClose }) {
           <span className="est-card__aqi-num" style={{ color: cat.color }}>
             {aqi}
           </span>
+          {uncert != null && (
+            <span style={{
+              fontSize: 12, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums',
+              alignSelf: 'flex-end', paddingBottom: 4,
+            }}>± {uncert}</span>
+          )}
           <span className="est-card__cat" style={{ background: cat.color }}>
             {cat.label}
           </span>
@@ -267,6 +281,12 @@ export function EstimateCard({ estimate, onClose }) {
             <div className="est-card__meta-row">
               <span className="est-card__meta-key">Based on</span>
               <span className="est-card__meta-val">{stations_used} stations</span>
+            </div>
+          )}
+          {uncert != null && (
+            <div className="est-card__meta-row">
+              <span className="est-card__meta-key">95% CI</span>
+              <span className="est-card__meta-val">{aqi - uncert * 2}–{aqi + uncert * 2} AQI</span>
             </div>
           )}
         </div>

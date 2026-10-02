@@ -112,6 +112,29 @@ function ForecastChart({ forecasts, currentOffset }) {
   );
 }
 
+// ── Source apportionment pill ────────────────────────────────────────
+function SourceTag({ pm25, pm10 }) {
+  if (pm25 == null || pm10 == null || pm10 === 0) return null;
+  const ratio = Math.min(pm25 / pm10, 1.0);
+  let label, color;
+  if (ratio >= 0.60)      { label = `Fine-fraction ${ratio.toFixed(2)} · Combustion / vehicular`; color = '#E08A3C'; }
+  else if (ratio <= 0.35) { label = `Fine-fraction ${ratio.toFixed(2)} · Dust dominated`;          color = '#A3B94F'; }
+  else                    { label = `Fine-fraction ${ratio.toFixed(2)} · Mixed profile`;            color = '#E0B341'; }
+  return (
+    <div style={{
+      margin: '4px var(--s2) 0',
+      padding: '3px 10px',
+      borderRadius: 99,
+      background: color + '22',
+      border: `1px solid ${color}44`,
+      fontSize: 11,
+      color,
+      fontWeight: 600,
+      display: 'inline-block',
+    }}>{label}</div>
+  );
+}
+
 // ── Pollutant grid ───────────────────────────────────────────────────
 function PollutantGrid({ station }) {
   const items = [
@@ -121,15 +144,18 @@ function PollutantGrid({ station }) {
     { key: 'so2',  label: 'SO₂'   },
   ];
   return (
-    <div className="sdc__pollutants" aria-label="Pollutant concentrations">
-      {items.map(({ key, label }) => (
-        <div key={key} className="sdc__poll-cell">
-          <div className="sdc__poll-val">{station[key] ?? '—'}</div>
-          <div className="sdc__poll-name">{label}</div>
-          <div className="sdc__poll-unit">μg/m³</div>
-        </div>
-      ))}
-    </div>
+    <>
+      <div className="sdc__pollutants" aria-label="Pollutant concentrations">
+        {items.map(({ key, label }) => (
+          <div key={key} className="sdc__poll-cell">
+            <div className="sdc__poll-val">{station[key] ?? '—'}</div>
+            <div className="sdc__poll-name">{label}</div>
+            <div className="sdc__poll-unit">μg/m³</div>
+          </div>
+        ))}
+      </div>
+      <SourceTag pm25={station.pm25} pm10={station.pm10} />
+    </>
   );
 }
 
@@ -201,8 +227,13 @@ export default function RightPanel({
         {selectedStation && (
           <>
             <PollutantGrid station={selectedStation} />
-            <div className="rp-sect-label section-label" style={{ padding: '0 var(--s2) 6px' }}>
-              Next 24 hours (SARIMA forecast)
+            <div className="rp-sect-label section-label" style={{ padding: '0 var(--s2) 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+              Next 24 hours
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '1px 7px',
+                borderRadius: 99, background: 'var(--light-sage)',
+                color: 'var(--forest)', border: '1px solid var(--sage)',
+              }}>SARIMAX · weather-aware</span>
             </div>
             {forecastLoading ? (
               <span className="skeleton"

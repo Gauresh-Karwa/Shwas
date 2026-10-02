@@ -84,9 +84,11 @@ function mergeStations(backendStations, configStations) {
     const stationEntry = {
       ...bs,
       name, lat, lon, ward, agency,
-      aqi: bs.aqi ?? null,
+      aqi:  bs.aqi  ?? null,
       pm25: bs.pm25 ?? null,
       pm10: bs.pm10 ?? null,
+      no2:  bs.no2  ?? null,
+      so2:  bs.so2  ?? null,
       updated_at: bs.updated_at ?? null,
     };
 
@@ -120,10 +122,10 @@ export async function fetchLiveStations(seedStations, signal) {
     lon: s.lon,
     aqi: s.aqi != null ? Math.round(s.aqi) : null,
     updated_at: s.timestamp,
-    pm25: null,
-    pm10: null,
-    no2: null,
-    so2: null
+    pm25: s.pm25 ?? null,
+    pm10: s.pm10 ?? null,
+    no2:  s.no2  ?? null,
+    so2:  s.so2  ?? null,
   }));
 
   if (backendStations.length === 0) {
@@ -163,5 +165,33 @@ export async function getAttribution(lat, lon, stationName, aqi, category, domin
   });
   const res = await fetch(`${BASE}/api/attribution?${params}`);
   if (!res.ok) throw new Error(`attribution HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── /api/wards ─────────────────────────────────────────────────────
+// Returns: { status, stations_used, wards, population_by_category, total_population }
+export async function fetchWardExposure(signal) {
+  const res = await fetch(`${BASE}/api/wards`, signal ? { signal } : {});
+  if (!res.ok) throw new Error(`wards HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── /api/analytics/hotspots ────────────────────────────────────────
+// Returns: [{ lat, lon, ward_id, ward_name, population, estimated_aqi,
+//             uncertainty_std, lcb, lcb_category, method }]
+export async function fetchHotspots(threshold = 100, z = 1.0, signal) {
+  const url = `${BASE}/api/analytics/hotspots?threshold=${threshold}&z=${z}`;
+  const res = await fetch(url, signal ? { signal } : {});
+  if (!res.ok) throw new Error(`hotspots HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── /api/recommendations/sensor-placement ─────────────────────────
+// Returns: [{ lat, lon, ward_id, ward_name, population,
+//             estimated_aqi, uncertainty_std, nearest_station_distance_km, score }]
+export async function fetchSensorSites(topK = 5, signal) {
+  const url = `${BASE}/api/recommendations/sensor-placement?top_k=${topK}`;
+  const res = await fetch(url, signal ? { signal } : {});
+  if (!res.ok) throw new Error(`sensor-placement HTTP ${res.status}`);
   return res.json();
 }

@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchLiveStations, forecastStation, getAttribution, checkHealth } from '../utils/api';
+import {
+  fetchLiveStations, forecastStation, getAttribution, checkHealth,
+  fetchWardExposure, fetchHotspots, fetchSensorSites,
+} from '../utils/api';
 import { STATIONS as MOCK_STATIONS, createMockForecast } from '../data/mockData';
 import { loadWardData } from '../data/wardData';
 import { computeWardAqi } from '../utils/geo';
@@ -10,6 +13,9 @@ const REFRESH_MS = 5 * 60 * 1000;
 export function useLiveData(seedStations) {
   const [stations, setStations] = useState([]);
   const [wardAqi, setWardAqi] = useState({});
+  const [wardExposure, setWardExposure] = useState(null);   // /api/wards summary
+  const [hotspots, setHotspots] = useState([]);              // /api/analytics/hotspots
+  const [sensorSites, setSensorSites] = useState([]);        // /api/recommendations/sensor-placement
   const [allForecasts, setAllForecasts] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
   const [backendDown, setBackendDown] = useState(false);
@@ -49,11 +55,24 @@ export function useLiveData(seedStations) {
       if (valid.length > 0) {
         setStations(valid);
         
+        // Prefer the authoritative ward exposure from the backend
         try {
-          const { geojson } = await loadWardData();
-          setWardAqi(computeWardAqi(geojson, valid));
-        } catch (err) {
-          console.error('Failed to compute ward AQI:', err);
+          const wardData = await fetchWardExposure();
+          setWardExposure(wardData);
+          // Build a wardId → { aqi, count } map for ShwasMap tooltips
+          const wardMap = {};
+          for (const w of (wardData.wards ?? [])) {
+            wardMap[w.ward_id] = { aqi: Math.round(w.aqi), count: 1, estimated: w.method !== 'sensor' };
+          }
+          setWardAqi(wardMap);
+        } catch (_) {
+          // Fallback to client-side centroid calculation if backend unreachable
+          try {
+            const { geojson } = await loadWardData();
+            setWardAqi(computeWardAqi(geojson, valid));
+          } catch (err) {
+            console.error('Failed to compute ward AQI:', err);
+          }
         }
         
         // Try to find a station with an actual updated_at, otherwise use the server response date
@@ -69,20 +88,24 @@ export function useLiveData(seedStations) {
       
       setBackendDown(false);
 
-      // Pre-fetch forecasts
+      // Pre-fetch forecasts, hotspots, sensor sites (initial only)
       if (isInitial) {
         const fResults = {};
-        await Promise.allSettled(
-          seedStations.map(async s => {
-            try {
-              const data = await forecastStation(s.id, 24, false);
-              fResults[s.id] = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
-            } catch {
-              // Ignore
-            }
-          })
-        );
+        const [, hotspotsRes, sensorsRes] = await Promise.allSettled([
+          Promise.allSettled(
+            seedStations.map(async s => {
+              try {
+                const data = await forecastStation(s.id, 24, false);
+                fResults[s.id] = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
+              } catch { /* Ignore */ }
+            })
+          ),
+          fetchHotspots(100, 1.0),
+          fetchSensorSites(5),
+        ]);
         setAllForecasts(fResults);
+        if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value ?? []);
+        if (sensorsRes.status === 'fulfilled') setSensorSites(sensorsRes.value ?? []);
       }
     } catch (e) {
       setBackendDown(true);
@@ -126,9 +149,29 @@ export function useLiveData(seedStations) {
     }
   }, []);
 
+  // Lazy-load forecast for a station when it's selected and not yet cached
+  const fetchForecastFor = useCallback(async (stationId) => {
+    if (!stationId) return;
+    setAllForecasts(prev => {
+      if (prev[stationId]) return prev; // already cached
+      return prev; // no change yet; fetch below
+    });
+    // Check cache via ref pattern — just try to fetch; skip if already set
+    try {
+      const data = await forecastStation(stationId, 24, false);
+      const fc = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
+      if (fc) setAllForecasts(prev => ({ ...prev, [stationId]: fc }));
+    } catch {
+      // Station may have no model — chart stays hidden
+    }
+  }, []);
+
   return {
     stations,
     wardAqi,
+    wardExposure,
+    hotspots,
+    sensorSites,
     allForecasts,
     lastUpdated,
     backendDown,
@@ -137,6 +180,7 @@ export function useLiveData(seedStations) {
     attribution,
     attributionLoading,
     attributionError,
-    fetchAttributionFor
+    fetchAttributionFor,
+    fetchForecastFor,
   };
 }

@@ -31,6 +31,8 @@ const DEFAULT_LAYERS = {
   population: false,
   slums:      false,
   windFires:  true,
+  hotspots:   false,
+  sensors:    false,
 };
 
 function cityAqi(stations) {
@@ -43,6 +45,9 @@ export default function App() {
   const {
     stations,
     wardAqi, // For future use
+    wardExposure,
+    hotspots,
+    sensorSites,
     allForecasts,
     lastUpdated,
     backendDown,
@@ -51,7 +56,8 @@ export default function App() {
     attribution,
     attributionLoading,
     attributionError,
-    fetchAttributionFor
+    fetchAttributionFor,
+    fetchForecastFor,
   } = useLiveData(SEED_STATIONS);
 
   // ── Layer toggles
@@ -70,8 +76,10 @@ export default function App() {
   const handleSelectStation = useCallback(async (station) => {
     setSelectedStation(station);
     setClickEstimate(null);
+    // Lazy-load forecast if it wasn't captured in the initial pre-fetch
+    if (station?.id) fetchForecastFor(station.id);
     await fetchAttributionFor(station);
-  }, [fetchAttributionFor]);
+  }, [fetchAttributionFor, fetchForecastFor]);
 
   const handleClickEstimate = useCallback((result) => {
     setClickEstimate(result);
@@ -141,6 +149,7 @@ export default function App() {
           cityAqi={cAqi}
           cleanest={cleanest}
           worst={worst}
+          wardExposure={wardExposure}
           stations={liveStations}
           selectedStation={selectedStation}
           onSelectStation={handleSelectStation}
@@ -167,6 +176,8 @@ export default function App() {
             allForecasts={allForecasts}
             windData={attribution?.wind}
             firesData={attribution?.fires}
+            hotspots={hotspots}
+            sensorSites={sensorSites}
           />
 
           <Legend />
