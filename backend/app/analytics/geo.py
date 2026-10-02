@@ -47,3 +47,32 @@ def polygon_centroid(geometry: dict) -> tuple[float, float]:
         return lat, lon
 
     raise ValueError(f"Unsupported geometry type for centroid: {gtype!r}")
+
+
+def _point_in_ring(lat: float, lon: float, ring: list[list[float]]) -> bool:
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        intersects = ((yi > lat) != (yj > lat)) and (
+            lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-15) + xi
+        )
+        if intersects:
+            inside = not inside
+        j = i
+    return inside
+
+
+def point_in_geometry(lat: float, lon: float, geometry: dict) -> bool:
+    gtype = geometry.get("type")
+    coords = geometry["coordinates"]
+
+    if gtype == "Polygon":
+        return _point_in_ring(lat, lon, coords[0])
+
+    if gtype == "MultiPolygon":
+        return any(_point_in_ring(lat, lon, polygon[0]) for polygon in coords)
+
+    raise ValueError(f"Unsupported geometry type for point containment: {gtype!r}")
