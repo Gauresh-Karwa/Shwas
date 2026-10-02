@@ -173,9 +173,15 @@ The frontend is built with **React 19**, **Vite**, and **MapLibre GL**, engineer
 * **Real-Time MapLibre GL Vector Map**: Renders Mumbai's coastline, road networks, 25 CPCB monitoring stations, and 24 BMC administrative ward polygons with GPU-accelerated styling.
 * **Continuous Spatial AQI Interpolation**: Overlays a continuous spatial raster/heatmap calculated via Spatial GNN and live station weights, showing gradients across unmonitored neighborhoods.
 * **Station Drawer & Multi-Pollutant Metrics**: Clicking any station opens an inspection drawer displaying:
-  * Calculated sub-index AQI and CPCB severity badge.
-  * Live readings: $\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, and $\text{SO}_2$ with timestamp of last update.
-  * Fine-fraction ratio ($\text{PM}_{2.5} / \text{PM}_{10}$) with source classification (combustion-dominated vs. road dust vs. mixed background).
+  * **Calculated Sub-Index AQI & CPCB Severity Badge**: Computed via the official Central Pollution Control Board (CPCB) piecewise linear sub-index formula:
+    $$I_p = I_{\text{low}} + \frac{I_{\text{high}} - I_{\text{low}}}{B_{\text{high}} - B_{\text{low}}} \times (C_p - B_{\text{low}}), \qquad \text{Overall AQI} = \max_{p \in \mathcal{P}} I_p$$
+    *(where $C_p$ is the pollutant concentration, $[B_{\text{low}}, B_{\text{high}}]$ is the breakpoint category bracket, $[I_{\text{low}}, I_{\text{high}}]$ is the AQI sub-index bracket, and $\mathcal{P}$ contains at least 3 criteria pollutants with mandatory $\text{PM}_{2.5}$ or $\text{PM}_{10}$)*.
+  * **Live Criteria Pollutants**: Real-time concentrations for $\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, and $\text{SO}_2$ (in $\mu\text{g/m}^3$) with telemetry timestamp of last ingestion.
+  * **Fine-Fraction Combustion vs. Crustal Dust Ratio**: Quantifies the particle size distribution via the dimensionless fine-to-coarse ratio:
+    $$\eta = \frac{[\text{PM}_{2.5}]}{[\text{PM}_{10}]} \quad (0 \le \eta \le 1)$$
+    - **Combustion-Dominated ($\eta \ge 0.65$)**: Fine particulate dominance characteristic of high-temperature combustion: vehicular tailpipe exhaust (diesel/petrol soot), industrial stack flue gas, biomass burning, and secondary nitrate/sulfate aerosols.
+    - **Mixed Urban Background ($0.40 < \eta < 0.65$)**: Intermediate composite blend typical of general metropolitan background air, combining dispersed traffic emissions and ambient urban dust.
+    - **Dust-Dominated ($\eta \le 0.40$)**: Coarse particulate dominance driven by mechanical shear and suspension: unpaved road dust, construction and demolition debris, quarry dust, or marine coarse aerosol/sea spray.
 * **Lazy-Loaded SARIMAX 24h Forecast Chart**: On-demand hourly time-series chart with upper and lower 95% analytical confidence bounds.
 * **Multi-Modal Causal Attribution Panel**: Live wind direction vectors, NASA FIRMS active fire counts within 50 km, and Gemini LLM natural language air quality summary.
 * **Ward Exposure Analysis & Stacked Cards**: Sidebar displays cleanly formatted Cleanest vs. Most Polluted stations with agency badges (`MPCB`, `IITM`, `BMC`), search/filtering, and total population counts exposed to each CPCB category.
@@ -185,201 +191,21 @@ The frontend is built with **React 19**, **Vite**, and **MapLibre GL**, engineer
 
 ## REST API Reference
 
-The FastAPI service exposes the following endpoints:
+The FastAPI service exposes the following endpoints (interactive OpenAPI documentation available at `/docs`):
 
-### 1. Service Health Check
-* `GET /health`
-* Response: `{"status": "ok"}`
-
-### 2. Live Stations with Multi-Pollutants
-* `GET /api/stations`
-* Returns all active monitoring stations with live calculated AQI, individual pollutant readings ($\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, $\text{SO}_2$), coordinates, ward names, and reporting agencies.
-* Response:
-```json
-[
-  {
-    "id": "kurla-mumbai-mpcb",
-    "name": "Kurla, Mumbai - MPCB",
-    "lat": 19.065,
-    "lon": 72.879,
-    "ward": "L",
-    "agency": "MPCB",
-    "aqi": 101.0,
-    "pm25": 42.5,
-    "pm10": 98.2,
-    "no2": 31.4,
-    "so2": 12.1,
-    "updated_at": "2026-10-02T10:08:00+00:00"
-  }
-]
-```
-
-### 3. Real-Time Spatial Interpolation
-* `GET /api/interpolate?lat={lat}&lon={lon}`
-* Parameters:
-  * `lat` (float, required): Query latitude (18.85 to 19.35 for Mumbai)
-  * `lon` (float, required): Query longitude (72.75 to 73.05 for Mumbai)
-* Response:
-```json
-{
-  "lat": 19.076,
-  "lon": 72.8777,
-  "estimated_aqi": 64.5,
-  "model": "gnn",
-  "stations_used": 25
-}
-```
-
-### 4. Station Time-Series Forecast
-* `GET /api/forecast/{station_id}?steps={steps}&uncertainty={true|false}`
-* Parameters:
-  * `station_id` (string, required): Station slug (e.g., `kurla-mumbai-mpcb`)
-  * `steps` (int, default `24`, range `1-168`): Forecast horizon in hours
-  * `uncertainty` (bool, default `false`): Include 95% analytical confidence intervals
-* Response:
-```json
-{
-  "station_id": "kurla-mumbai-mpcb",
-  "model": "sarimax",
-  "steps": 24,
-  "forecast": [
-    {
-      "timestamp": "2026-10-02T11:00:00+00:00",
-      "aqi": 82.4,
-      "aqi_lower": 68.1,
-      "aqi_upper": 96.7
-    }
-  ]
-}
-```
-
-### 5. Spatio-Temporal Coordinate Forecast
-* `GET /api/forecast/coordinate?lat={lat}&lon={lon}&steps={steps}&uncertainty={true|false}`
-* Parameters:
-  * `lat` (float, required): Query latitude
-  * `lon` (float, required): Query longitude
-  * `steps` (int, default `24`, range `1-48`): Forecast horizon in hours
-  * `uncertainty` (bool, default `false`): Include MC-dropout confidence intervals
-* Response:
-```json
-{
-  "lat": 19.076,
-  "lon": 72.8777,
-  "model": "gnn_chained",
-  "steps": 24,
-  "stations_used": 25,
-  "forecast": [
-    {
-      "timestamp": "2026-10-02T11:00:00+00:00",
-      "aqi": 64.5,
-      "category": "Satisfactory",
-      "aqi_lower": 54.2,
-      "aqi_upper": 74.8,
-      "uncertainty_std": 5.25
-    }
-  ]
-}
-```
-
-### 6. Municipal Ward-Level Population Exposure
-* `GET /api/wards`
-* Calculates live population-weighted exposure across all 24 BMC administrative wards based on Census 2011 figures.
-* Response:
-```json
-{
-  "status": "ok",
-  "stations_used": 25,
-  "wards": [
-    {
-      "ward_id": "E",
-      "ward_name": "Byculla",
-      "population": 393286,
-      "census_year": 2011,
-      "lat": 18.973,
-      "lon": 72.834,
-      "aqi": 121.2,
-      "category": "Moderate",
-      "method": "gnn"
-    }
-  ],
-  "population_by_category": {
-    "Moderate": 3145880,
-    "Satisfactory": 9296493
-  },
-  "total_population": 12442373
-}
-```
-
-### 7. Multi-Modal Causal Attribution
-* `GET /api/attribution/{station_id}`
-* Combines wind telemetry, back-trajectories, NASA FIRMS active fires, and Gemini LLM synthesis.
-* Response:
-```json
-{
-  "station_id": "chembur-mumbai-mpcb",
-  "station_name": "Chembur, Mumbai - MPCB",
-  "aqi": 118.0,
-  "category": "Moderate",
-  "dominant_pollutant": "PM2.5",
-  "wind": {
-    "speed_mps": 3.4,
-    "direction_deg": 82,
-    "direction_label": "ENE"
-  },
-  "active_fires_nearby": 0,
-  "explanation": "Air is moderate near Chembur today with elevated PM2.5, but an ENE breeze under scattered clouds is keeping particulate dispersion decent."
-}
-```
-
-### 8. Physical Source Apportionment
-* `GET /api/attribution/{station_id}/apportionment`
-* Computes rolling 24-hour $\text{PM}_{2.5} / \text{PM}_{10}$ fine-fraction ratios to classify dominant emission sources:
-  * `combustion_dominated` ($\text{ratio} \ge 0.65$): Vehicle exhaust, refinery flue gas, biomass burning.
-  * `mixed` ($0.40 \le \text{ratio} < 0.65$): General urban background.
-  * `dust_dominated` ($\text{ratio} \le 0.40$): Road dust resuspension, construction debris, marine aerosol.
-* `GET /api/attribution/city/apportionment`
-* Aggregates fine-fraction classifications citywide across all active stations.
-
-### 9. Real-Time Spatial Hotspot Detection
-* `GET /api/analytics/hotspots?threshold=100.0&z=1.0`
-* Uses DBSCAN spatial clustering over continuous grid scans to identify localized high-pollution clusters.
-* Response:
-```json
-[
-  {
-    "lat": 19.068,
-    "lon": 72.875,
-    "ward_id": "L",
-    "ward_name": "Kurla",
-    "population": 902235,
-    "estimated_aqi": 142.3,
-    "uncertainty_std": 6.8,
-    "lcb": 135.5,
-    "lcb_category": "Moderate",
-    "method": "gnn"
-  }
-]
-```
-
-### 10. Optimal Sensor Placement Recommendations
-* `GET /api/recommendations/sensor-placement?top_k=5&exclusion_radius_km=2.0`
-* Executes a greedy variance-reduction algorithm to rank optimal candidate sites for deploying new CAAQMS monitors to minimize citywide spatial interpolation uncertainty.
-* Response:
-```json
-[
-  {
-    "lat": 19.182,
-    "lon": 72.845,
-    "ward_id": "P/N",
-    "ward_name": "Malad",
-    "population": 943776,
-    "estimated_aqi": 88.4,
-    "uncertainty_std": 14.2,
-    "nearest_station_distance_km": 4.85,
-    "score": 0.892
-  }
-]
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Service health and liveness check. |
+| `GET` | `/api/stations` | Live CAAQMS stations with calculated AQI, criteria pollutants ($\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, $\text{SO}_2$), coordinates, ward names, and reporting agencies. |
+| `GET` | `/api/interpolate?lat={lat}&lon={lon}` | Continuous spatial AQI estimation via Spatial GNN at arbitrary Mumbai coordinates (`lat`: 18.85–19.35, `lon`: 72.75–73.05). |
+| `GET` | `/api/forecast/{station_id}?steps=24&uncertainty=true` | Station-level 24-hour time-series forecast using rolling weather-aware SARIMAX with analytical 95% confidence intervals. |
+| `GET` | `/api/forecast/coordinate?lat={lat}&lon={lon}&steps=24` | Spatio-temporal chained forecast at unmonitored coordinates with MC-dropout uncertainty bounds. |
+| `GET` | `/api/wards` | Real-time population exposure aggregation across all 24 BMC administrative wards based on Census 2011 figures. |
+| `GET` | `/api/attribution/{station_id}` | Multi-modal causal attribution combining wind vectors, NASA FIRMS active fire proximity checks, and Gemini LLM synthesis. |
+| `GET` | `/api/attribution/{station_id}/apportionment` | Rolling 24-hour fine-fraction ratio $\eta = \frac{\overline{[\text{PM}_{2.5}]}_{24\text{h}}}{\overline{[\text{PM}_{10}]}_{24\text{h}}}$ classifying combustion ($\eta \ge 0.65$) vs. mixed ($0.40 < \eta < 0.65$) vs. dust ($\eta \le 0.40$) sources. |
+| `GET` | `/api/attribution/city/apportionment` | Citywide fine-fraction source apportionment summary across the monitoring fleet. |
+| `GET` | `/api/analytics/hotspots?threshold=100&z=1.0` | Real-time DBSCAN spatial clustering of continuous grid scans to identify localized high-pollution clusters. |
+| `GET` | `/api/recommendations/sensor-placement?top_k=5` | Greedy variance-reduction optimizer ranking top candidate sites for new sensor deployment to minimize spatial interpolation uncertainty. |
 
 ---
 
@@ -387,109 +213,29 @@ The FastAPI service exposes the following endpoints:
 
 ```
 Shwas/
-├── README.md                           # Comprehensive technical platform documentation
-├── backend/
-│   ├── alembic/                        # Database schema migrations
-│   │   ├── versions/                   # Migration scripts (stations, readings, AQI)
-│   │   └── env.py
-│   ├── alembic.ini
-│   ├── requirements.txt                # Python backend dependencies
-│   ├── app/
+├── backend/                            # Python FastAPI backend service
+│   ├── alembic/                        # Relational database schema migrations
+│   ├── app/                            # Application source package
 │   │   ├── analytics/                  # Spatial grid scan, DBSCAN hotspots, sensor placement, ward exposure
-│   │   │   ├── geo.py                  # Haversine distance, Shoelace polygon area & centroid math
-│   │   │   ├── grid_scan.py            # Mumbai bounding box grid generation and sampling
-│   │   │   ├── hotspots.py             # DBSCAN spatial clustering of elevated AQI zones
-│   │   │   ├── sensor_placement.py     # Greedy variance-reduction sensor network optimizer
-│   │   │   ├── source_apportionment.py # PM2.5/PM10 fine-fraction combustion/dust classifier
-│   │   │   └── ward_exposure.py        # 24 BMC wards Census 2011 population risk aggregation
 │   │   ├── aqi/                        # Official Indian CPCB sub-index breakpoints and math
-│   │   ├── attribution/                # Multi-modal causal attribution engine
-│   │   │   ├── attribution_service.py  # Attribution aggregator and synthesiser
-│   │   │   ├── fire_client.py          # NASA FIRMS VIIRS satellite thermal anomaly fetcher
-│   │   │   ├── llm_explainer.py        # Google Gemini natural language citizen summarizer
-│   │   │   ├── news_search.py          # Real-time air quality news context search
-│   │   │   ├── open_meteo_client.py    # Open-Meteo ERA5 reanalysis and hourly weather parser
-│   │   │   ├── overpass_client.py      # OpenStreetMap Overpass urban morphology client
-│   │   │   └── weather_client.py       # OpenWeatherMap surface wind and dispersion client
-│   │   ├── forecasting/                # SARIMA/SARIMAX models, spatial chainer, baselines
-│   │   │   ├── sarima_model.py         # Rolling SARIMAX with exogenous weather regressors
-│   │   │   ├── service.py              # Forecast service orchestration and caching
-│   │   │   └── spatial.py              # Spatio-temporal coordinate forecast chainer
-│   │   ├── ingestion/                  # CPCB CAAQMS ingestion, anomaly filters, scheduler
-│   │   ├── interpolation/              # Haversine distance, bearing, IDW math, live snapshot
-│   │   ├── ml/                         # PyTorch Graph Attention Network (GAT) architecture
-│   │   ├── models/                     # SQLAlchemy relational database models
-│   │   ├── routers/                    # FastAPI route controllers
-│   │   │   ├── attribution.py          # /api/attribution endpoints
-│   │   │   ├── forecast.py             # /api/forecast endpoints
-│   │   │   ├── interpolate.py          # /api/interpolate and /api/stations endpoints
-│   │   │   ├── recommendations.py      # /api/recommendations (hotspots, sensor placement)
-│   │   │   └── wards.py                # /api/wards endpoint
-│   │   ├── config.py                   # Pydantic Settings and environment validation
-│   │   ├── db.py                       # PostgreSQL SQLAlchemy engine and session factory
-│   │   └── main.py                     # FastAPI application entrypoint and middleware
-│   ├── evaluate/
-│   │   ├── evaluate_forecast.py        # 7-day walk-forward station forecast benchmark
-│   │   └── evaluate_interpolation.py   # Spatial leave-one-out cross-validation benchmark
-│   ├── models/
-│   │   ├── gnn_best.pt                 # Production PyTorch GNN model checkpoint
-│   │   └── gnn_checkpoint.pt
-│   ├── scripts/
-│   │   ├── audit_data_completeness.py  # Health check for station telemetry coverage
-│   │   ├── build_station_features.py   # Extracts OSM spatial attributes for all stations
-│   │   ├── evaluate_coordinate_forecast.py # Spatio-temporal coordinate backtest runner
-│   │   ├── evaluate_sarimax_weather.py # Walk-forward benchmark for weather-aware SARIMAX
-│   │   ├── evaluate_uncertainty_calibration.py # Calibration benchmark for CI and MC-dropout
-│   │   ├── load_ward_data.py           # Seeds 24 BMC ward boundaries and Census 2011 populations
-│   │   ├── merge_historical.py         # Ingests and cleans Kaggle historical archive
-│   │   ├── seed_stations.py            # Seeds Mumbai monitoring station coordinates
-│   │   └── train_gnn.py                # GNN training pipeline with Cosine Annealing
-│   └── tests/                          # Automated test suite (140+ unit & integration tests)
-│       ├── test_attribution.py
-│       ├── test_calculator.py
-│       ├── test_cleaner.py
-│       ├── test_forecasting.py
-│       ├── test_geo.py
-│       ├── test_gnn.py
-│       ├── test_grid_scan.py
-│       ├── test_hotspots.py
-│       ├── test_idw.py
-│       ├── test_integration_api.py
-│       ├── test_integration_attribution.py
-│       ├── test_integration_recommendations.py
-│       ├── test_integration_wards.py
-│       ├── test_load_ward_data.py
-│       ├── test_open_meteo_client.py
-│       ├── test_sarimax_weather.py
-│       ├── test_sensor_placement.py
-│       ├── test_source_apportionment.py
-│       ├── test_spatial_forecast.py
-│       └── test_uncertainty.py
-└── frontend/                           # React 19 + Vite + MapLibre GL Web Application
-    ├── package.json
-    ├── vite.config.js
-    ├── src/
-    │   ├── App.jsx                     # Core dashboard layout, station selection, state sync
-    │   ├── App.css
-    │   ├── index.css                   # Design tokens, typography, glassmorphism utilities
-    │   ├── main.jsx                    # React root entrypoint
-    │   ├── components/
-    │   │   ├── LeftPanel.jsx           # Cleanest/worst cards, station search, AQI guide modal
-    │   │   ├── LeftPanel.css
-    │   │   ├── RightPanel.jsx          # Source attribution, wind vectors, NASA fires, news
-    │   │   ├── RightPanel.css
-    │   │   ├── ShwasMap.jsx            # MapLibre GL map, continuous interpolation, pins, wards
-    │   │   ├── ShwasMap.css
-    │   │   ├── StationDetail.jsx       # Drawer with PM2.5/PM10/NO2/SO2, ratio, 24h SARIMAX
-    │   │   ├── StationDetail.css
-    │   │   ├── TimeSlider.jsx          # Interactive timeline playback
-    │   │   └── TopBar.jsx              # Status indicators, live telemetry metadata
-    │   ├── hooks/
-    │   │   └── useLiveData.js          # Polling, lazy forecast fetch, attribution & recommendations
-    │   └── utils/
-    │       ├── api.js                  # Axios/fetch client for FastAPI backend endpoints
-    │       ├── aqi.js                  # Indian National AQI calculations and category colors
-    │       └── geo.js                  # Coordinate conversions and GeoJSON utilities
+│   │   ├── attribution/                # Multi-modal causal attribution (wind, NASA FIRMS, Gemini LLM)
+│   │   ├── forecasting/                # Rolling SARIMA/SARIMAX models and coordinate spatial chainer
+│   │   ├── ingestion/                  # CPCB CAAQMS ingestion, physical anomaly filters, and scheduler
+│   │   ├── interpolation/              # Haversine distance, bearing, IDW math, and live snapshots
+│   │   ├── ml/                         # PyTorch Graph Attention Network (GAT) spatial architecture
+│   │   ├── models/                     # SQLAlchemy relational schema models
+│   │   └── routers/                    # FastAPI REST route controllers
+│   ├── evaluate/                       # Walk-forward spatial and temporal benchmark suites
+│   ├── models/                         # Serialized PyTorch neural model weights and checkpoints
+│   ├── scripts/                        # Data seeding, OSM feature extraction, and evaluation runners
+│   └── tests/                          # Automated unit and end-to-end integration test suite
+└── frontend/                           # React 19 + Vite + MapLibre GL web application
+    └── src/                            # Client source code
+        ├── assets/                     # Static media and brand vector assets
+        ├── components/                 # MapLibre map, station drawer, sidebars, and modals
+        ├── data/                       # Seed station metadata and municipal ward GeoJSON boundaries
+        ├── hooks/                      # Custom React hooks for real-time telemetry and state sync
+        └── utils/                      # REST API client, CPCB sub-index math, and geo utilities
 ```
 
 ---
