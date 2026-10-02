@@ -167,7 +167,7 @@
 /* ── Ward summary cards ──────────────────────────────── */
 .ward-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: var(--s1);
   padding: 0 var(--s2);
   margin-bottom: var(--s2);
@@ -194,6 +194,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
+  min-width: 0;
 }
 
 .ward-card__name {
