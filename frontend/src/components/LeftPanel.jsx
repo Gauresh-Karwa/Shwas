@@ -110,6 +110,12 @@ function CityAQICard({ aqi, loading }) {
 // ─────────────────────────────────────────────────────────
 // Ward summary cards — live cleanest/worst
 // ─────────────────────────────────────────────────────────
+function cleanStationName(name) {
+  if (!name) return '—';
+  // Strip trailing " - AGENCY" pattern (e.g. "Powai, Mumbai - MPCB" → "Powai, Mumbai")
+  return name.replace(/\s*-\s*(MPCB|IITM|BMC|CPCB|SAFAR)$/i, '').trim();
+}
+
 function WardCards({ cleanest, worst, loading }) {
   if (loading) {
     return (
@@ -129,17 +135,32 @@ function WardCards({ cleanest, worst, loading }) {
   return (
     <div className="ward-cards">
       {[
-        { label: 'Cleanest ward',      s: cleanest },
-        { label: 'Most polluted ward', s: worst    },
-      ].map(({ label, s }) => {
+        { label: 'Cleanest station',      icon: '↓', s: cleanest },
+        { label: 'Most polluted station', icon: '↑', s: worst    },
+      ].map(({ label, icon, s }) => {
         const cat = getCategory(s?.aqi);
+        const agency = s?.agency ?? (s?.name?.match(/-\s*(MPCB|IITM|BMC)/i)?.[1] ?? '');
+        const displayName = cleanStationName(s?.name);
         return (
-          <div className="ward-card" key={label}>
-            <div className="ward-card__label">{label}</div>
-            <div className="ward-card__row">
-              <span className="ward-card__name">{s?.name ?? '—'}</span>
-              <span className="aqi-badge" style={{ background: cat.color, fontSize: 11 }}>{s?.aqi ?? '—'}</span>
+          <div className="ward-card" key={label} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="ward-card__label" style={{ marginBottom: 2 }}>
+                {icon} {label}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="ward-card__name" style={{ fontSize: 12.5 }}>{displayName}</span>
+                {agency && (
+                  <span style={{
+                    fontSize: 9, fontWeight: 700, padding: '1px 5px',
+                    borderRadius: 3, background: 'var(--border)', color: 'var(--muted)',
+                    flexShrink: 0,
+                  }}>{agency}</span>
+                )}
+              </div>
             </div>
+            <span className="aqi-badge" style={{ background: cat.color, fontSize: 12, flexShrink: 0 }}>
+              {s?.aqi ?? '—'}
+            </span>
           </div>
         );
       })}
@@ -147,16 +168,19 @@ function WardCards({ cleanest, worst, loading }) {
   );
 }
 
+
 // ─────────────────────────────────────────────────────────
 // Layer toggles — includes Wind and fires
 // ─────────────────────────────────────────────────────────
 const LAYERS = [
-  { key: 'stations',   label: 'Stations'       },
-  { key: 'heatmap',    label: 'Heatmap'        },
-  { key: 'boundaries', label: 'Boundaries'     },
-  { key: 'population', label: 'Population'     },
-  { key: 'slums',      label: 'Slum clusters'  },
-  { key: 'windFires',  label: 'Wind and fires' },
+  { key: 'stations',   label: 'Stations'          },
+  { key: 'heatmap',    label: 'Heatmap'           },
+  { key: 'boundaries', label: 'Boundaries'        },
+  { key: 'population', label: 'Population'        },
+  { key: 'slums',      label: 'Slum clusters'     },
+  { key: 'windFires',  label: 'Wind and fires'    },
+  { key: 'hotspots',   label: 'Hotspots (LCB)'   },
+  { key: 'sensors',    label: 'Sensor sites (AI)' },
 ];
 
 function LayerToggles({ layers, onChange }) {
@@ -236,26 +260,175 @@ function StationList({ stations, selectedId, onSelect, loading }) {
 }
 
 // ─────────────────────────────────────────────────────────
+// Population exposure bar — driven by /api/wards
+// ─────────────────────────────────────────────────────────
+const POP_CAT_ORDER = ['Good', 'Satisfactory', 'Moderate', 'Poor', 'Very Poor', 'Severe'];
+const POP_CAT_COLORS = {
+  'Good': '#3E9C78', 'Satisfactory': '#A3B94F', 'Moderate': '#E0B341',
+  'Poor': '#E08A3C', 'Very Poor': '#C4483F', 'Severe': '#7A2E3A',
+};
+
+function fmtM(n) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(n);
+}
+
+function PopulationExposure({ wardExposure, loading }) {
+  if (loading) return (
+    <div style={{ margin: 'var(--s2)', marginTop: 0 }}>
+      <span className="skeleton" style={{ width: '60%', height: 10, display: 'block', marginBottom: 8 }} />
+      <span className="skeleton" style={{ width: '100%', height: 12, display: 'block', borderRadius: 6 }} />
+    </div>
+  );
+  if (!wardExposure) return null;
+
+  const { population_by_category, total_population } = wardExposure;
+  if (!total_population) return null;
+
+  // Build ordered segments (only categories that have population)
+  const segments = POP_CAT_ORDER
+    .filter(cat => (population_by_category?.[cat] ?? 0) > 0)
+    .map(cat => ({ cat, pop: population_by_category[cat], color: POP_CAT_COLORS[cat] }));
+
+  return (
+    <div style={{ margin: 'var(--s2)', marginTop: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 5 }}>
+        <span className="section-label" style={{ margin: 0, fontSize: 10 }}>Population exposure</span>
+        <span style={{ fontSize: 10, color: 'var(--muted)' }}>{fmtM(total_population)} total</span>
+      </div>
+      {/* Stacked bar */}
+      <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', gap: 1 }}>
+        {segments.map(({ cat, pop, color }) => (
+          <div key={cat} title={`${cat}: ${fmtM(pop)}`}
+            style={{ flex: pop, background: color, minWidth: 2 }} />
+        ))}
+      </div>
+      {/* Legend pills */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginTop: 6 }}>
+        {segments.map(({ cat, pop, color }) => (
+          <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+            <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+              <strong style={{ color: 'var(--text)' }}>{fmtM(pop)}</strong> {cat}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
 // Legend (exported — rendered inside map area)
 // ─────────────────────────────────────────────────────────
+const HEALTH_TIPS = {
+  'Good':         'Air quality is satisfactory. No restrictions.',
+  'Satisfactory': 'Unusually sensitive people should consider reducing prolonged exertion.',
+  'Moderate':     'Sensitive groups (elderly, children, respiratory/heart conditions) should reduce prolonged exertion outdoors.',
+  'Poor':         'Everyone should reduce prolonged or heavy exertion. Sensitive groups avoid outdoor activity.',
+  'Very Poor':    'Everyone should avoid prolonged exertion. Sensitive groups should stay indoors.',
+  'Severe':       'Everyone should avoid all outdoor exertion. Sensitive groups should remain indoors and keep windows closed.',
+};
+
 export function Legend() {
+  const [open, setOpen] = useState(false);
+
+  // Close on click outside
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
   return (
-    <div style={{
-      position: 'absolute', bottom: 24, right: 16,
-      background: 'var(--white)', border: '1px solid var(--border)',
-      borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)',
-      padding: '12px 14px', minWidth: 168, zIndex: 100,
-    }}>
-      <div className="section-label" style={{ marginBottom: 10 }}>Air Quality Index</div>
-      {CATS.map(c => (
-        <div key={c.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
-          <span style={{ flex: 1, fontSize: 12.5, color: 'var(--text)' }}>{c.label}</span>
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
-            {c.min}–{c.max > 400 ? '500+' : c.max}
+    <div ref={ref} style={{ position: 'absolute', bottom: 20, right: 16, zIndex: 100 }}>
+      {/* Collapsed toggle button */}
+      {!open && (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="Show AQI scale"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 7,
+            background: 'rgba(255,255,255,0.92)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid var(--border)',
+            borderRadius: 99,
+            boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
+            padding: '6px 14px 6px 10px',
+            cursor: 'pointer',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: 12, fontWeight: 600, color: 'var(--text)',
+            transition: 'box-shadow 0.2s',
+          }}
+          onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 18px rgba(0,0,0,0.18)'}
+          onMouseLeave={e => e.currentTarget.style.boxShadow = '0 2px 12px rgba(0,0,0,0.12)'}
+        >
+          {/* Mini colour bar */}
+          <span style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            {CATS.map(c => (
+              <span key={c.label} style={{
+                width: 8, height: 8, borderRadius: '50%', background: c.color,
+              }} />
+            ))}
           </span>
+          AQI Scale
+        </button>
+      )}
+
+      {/* Expanded popup */}
+      {open && (
+        <div style={{
+          background: 'rgba(255,255,255,0.96)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid var(--border)',
+          borderRadius: 14,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.16)',
+          padding: '14px 16px 10px',
+          minWidth: 236,
+          animation: 'legendPop 0.18s ease',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div className="section-label" style={{ margin: 0 }}>Air Quality Index</div>
+            <button onClick={() => setOpen(false)} aria-label="Close AQI legend" style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: 2,
+            }}>✕</button>
+          </div>
+
+          {CATS.map(c => (
+            <div key={c.label} style={{ marginBottom: 9 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: c.color, flexShrink: 0,
+                }} />
+                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
+                  {c.label}
+                </span>
+                <span style={{
+                  fontSize: 11, color: 'var(--muted)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {c.min}–{c.max > 400 ? '500+' : c.max}
+                </span>
+              </div>
+              <div style={{
+                marginLeft: 18, marginTop: 2,
+                fontSize: 10.5, color: 'var(--muted)', lineHeight: 1.35,
+              }}>
+                {HEALTH_TIPS[c.label]}
+              </div>
+            </div>
+          ))}
+
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)', fontSize: 10, color: 'var(--muted)' }}>
+            CPCB National Air Quality Index guidelines
+          </div>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -271,6 +444,7 @@ export default function LeftPanel({
   cityAqi,
   cleanest,
   worst,
+  wardExposure,
   stations,
   // Selection
   selectedStation,
@@ -293,6 +467,9 @@ export default function LeftPanel({
 
       {/* 3 Ward cards */}
       <WardCards cleanest={cleanest} worst={worst} loading={loading} />
+
+      {/* 3b Population exposure bar */}
+      <PopulationExposure wardExposure={wardExposure} loading={loading} />
 
       <div className="panel__divider" />
 

@@ -229,6 +229,8 @@ export default function ShwasMap({
   allForecasts   = null, // { [stationId]: forecast[] }
   windData       = null, // { speed_mps, direction_deg, compass } | null
   firesData      = null, // [{lat, lon, distance_km, intensity_mw}] | null
+  hotspots       = [],   // [{lat, lon, ward_name, lcb, lcb_category}]
+  sensorSites    = [],   // [{lat, lon, ward_name, score, estimated_aqi}]
 }) {
   const containerRef        = useRef(null);
   const mapRef              = useRef(null);
@@ -244,6 +246,8 @@ export default function ShwasMap({
   const styleReadyRef       = useRef(false);
   const windMarkerRef       = useRef(null);   // HTMLMarker for wind arrow
   const fireMarkersRef      = useRef([]);     // array of HTMLMarkers for fires
+  const hotspotMarkersRef   = useRef([]);     // array of HTMLMarkers for LCB hotspots
+  const sensorMarkersRef    = useRef([]);     // array of HTMLMarkers for sensor sites
 
   // Always-current prop mirrors (safe inside async / RAF callbacks)
   const stationPointsRef   = useRef(stationPoints);
@@ -643,6 +647,9 @@ export default function ShwasMap({
       const cat = aqi != null ? getCategory(aqi) : null;
       const count = wardData.count || 0;
       const estimated = wardData.estimated || false;
+      // Show ward name: prefer wardName property, fall back to code (strip "(T)" style doubles)
+      const wName = feat.properties.wardName ?? id ?? '';
+      const wLabel = wName !== id ? `${wName} (${id})` : wName;
 
       // Position tooltip offset from cursor, keep inside map edges
       const canvas = map.getCanvas();
@@ -655,7 +662,7 @@ export default function ShwasMap({
 
       popupRef.current.setLngLat(e.lngLat).setHTML(`
         <div class="shwas-popup-inner shwas-ward-tooltip">
-          <div class="shwas-popup-name">${feat.properties.wardName ?? id} ${id ? `(${id})` : ''}</div>
+          <div class="shwas-popup-name">${wLabel}</div>
           <div class="shwas-popup-pop">Population: ${fmtPop(pop)}</div>
           ${aqi != null
             ? `<div class="shwas-popup-aqi" style="color:${cat.color}">
@@ -784,7 +791,12 @@ export default function ShwasMap({
       type: 'FeatureCollection',
       features: (pts ?? []).filter(s => s.aqi != null).map(s => ({
         type: 'Feature',
-        properties: { id: s.id, name: s.name, agency: s.agency, ward: s.ward, aqi: s.aqi, color: getAQIColor(s.aqi) },
+        properties: {
+          id: s.id, name: s.name, agency: s.agency,
+          ward: s.ward, aqi: s.aqi, color: getAQIColor(s.aqi),
+          pm25: s.pm25 ?? null, pm10: s.pm10 ?? null,
+          updated_at: s.updated_at ?? null,
+        },
         geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
       })),
     };
@@ -990,7 +1002,59 @@ export default function ShwasMap({
       .addTo(map);
   }, [windData, selectedStation, layers.windFires]);
 
-  // ── Fire markers ────────────────────────────────────────────────
+  // ── Hotspot markers ──────────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    hotspotMarkersRef.current.forEach(m => m.remove());
+    hotspotMarkersRef.current = [];
+    if (!map || !styleReadyRef.current || !hotspots?.length || !layers.hotspots) return;
+
+    hotspots.forEach((h, idx) => {
+      if (h.lat == null || h.lon == null) return;
+      const el = document.createElement('div');
+      el.className = 'hotspot-marker';
+      el.setAttribute('aria-label', `Hotspot: ${h.ward_name ?? ''}, LCB AQI ${Math.round(h.lcb)}`);
+      el.innerHTML = `
+        <div class="hotspot-marker__pulse"></div>
+        <div class="hotspot-marker__core" title="${h.ward_name ?? ''}: AQI ${Math.round(h.estimated_aqi ?? h.lcb)}">
+          <div class="hotspot-marker__aqi">${Math.round(h.estimated_aqi ?? h.lcb)}</div>
+          <div class="hotspot-marker__label">${h.lcb_category ?? 'Hotspot'}</div>
+        </div>
+      `;
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([h.lon, h.lat])
+        .addTo(map);
+      hotspotMarkersRef.current.push(marker);
+    });
+  }, [hotspots, layers.hotspots]);
+
+  // ── Sensor site markers ──────────────────────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    sensorMarkersRef.current.forEach(m => m.remove());
+    sensorMarkersRef.current = [];
+    if (!map || !styleReadyRef.current || !sensorSites?.length || !layers.sensors) return;
+
+    sensorSites.forEach((s, idx) => {
+      if (s.lat == null || s.lon == null) return;
+      const el = document.createElement('div');
+      el.className = 'sensor-marker';
+      el.setAttribute('aria-label', `Recommended sensor #${idx + 1}: ${s.ward_name ?? ''}`);
+      el.innerHTML = `
+        <div class="sensor-marker__ring"></div>
+        <div class="sensor-marker__body" title="${s.ward_name ?? ''}: gap score ${s.score?.toFixed(2) ?? ''}">
+          <div class="sensor-marker__rank">#${idx + 1}</div>
+          <div class="sensor-marker__label">${s.ward_name?.split(' ')[0] ?? 'Ward'}</div>
+        </div>
+      `;
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([s.lon, s.lat])
+        .addTo(map);
+      sensorMarkersRef.current.push(marker);
+    });
+  }, [sensorSites, layers.sensors]);
+
+  // ── Fire markers ─────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
     // Always remove old fire markers first
