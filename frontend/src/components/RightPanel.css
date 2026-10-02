@@ -1,0 +1,341 @@
+/* ── Right panel shell ────────────────────────────────────────────
+   Slides in from the right when a station/point is selected.
+   Width transitions from 0 → 340px.
+──────────────────────────────────────────────────────────────────── */
+.right-panel {
+  width: 0;
+  flex-shrink: 0;
+  height: 100%;
+  background: var(--white);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: width 260ms cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
+}
+
+.right-panel--open {
+  width: 340px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ── Forecast chart (inside RightPanel) ──────────────────── */
+.rp-chart {
+  margin-bottom: 4px;
+}
+
+.rp-chart__meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+
+.fc-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+.rp-head {
+  padding: var(--s2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--white);
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--s1);
+}
+
+.rp-title {
+  font-family: var(--font-head);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.rp-subtitle {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+.rp-updated {
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ── Body ────────────────────────────────────────────────────────── */
+.rp-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+}
+
+/* ── Skeleton ────────────────────────────────────────────────────── */
+.rp-skeleton {
+  padding: var(--s2);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Explanation ─────────────────────────────────────────────────── */
+.rp-explanation {
+  margin: var(--s2);
+  padding: 12px 14px;
+  background: var(--mist);
+  border-left: 3px solid var(--green);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+/* ── Divider ─────────────────────────────────────────────────────── */
+.rp-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0 var(--s2);
+}
+
+/* ── Data rows (wind, fires) ─────────────────────────────────────── */
+.rp-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px var(--s2);
+  border-bottom: 1px solid var(--mist);
+}
+
+.rp-row:last-of-type {
+  border-bottom: none;
+}
+
+.rp-row__icon {
+  width: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 2px;
+}
+
+.rp-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.rp-row__label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.rp-row__val {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.rp-muted {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ── Wind icon ───────────────────────────────────────────────────── */
+.rp-wind-icon {
+  transition: transform 400ms ease;
+}
+
+/* ── Fires list ──────────────────────────────────────────────────── */
+.rp-fires-list {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rp-fire-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.rp-fire-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #C4483F;
+  flex-shrink: 0;
+}
+
+/* ── News ────────────────────────────────────────────────────────── */
+.rp-news {
+  padding: var(--s2);
+}
+
+.rp-news__label {
+  margin-bottom: 10px;
+}
+
+.rp-news-item {
+  display: block;
+  padding: 9px 12px;
+  margin-bottom: 6px;
+  background: var(--mist);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: background var(--ease), border-color var(--ease);
+}
+
+.rp-news-item:hover {
+  background: var(--light-sage);
+  border-color: var(--sage);
+}
+
+.rp-news-item__title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--forest);
+  line-height: 1.45;
+  margin-bottom: 4px;
+}
+
+.rp-news-item__source {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ── Error state ─────────────────────────────────────────────────── */
+.rp-error {
+  padding: var(--s4) var(--s2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s1);
+}
+
+.rp-error__msg {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.rp-retry {
+  height: 32px;
+  padding: 0 var(--s2);
+  background: var(--light-sage);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--forest);
+  cursor: pointer;
+  transition: background var(--ease), border-color var(--ease);
+  margin-top: 4px;
+}
+
+.rp-retry:hover {
+  background: var(--border);
+  border-color: var(--sage);
+}
+
+/* ── Mobile collapse ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .right-panel--open {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    height: auto;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+}
+
+/* ── Map overlay elements (wind + fire) ─────────────────────────── */
+.wind-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.wind-marker__arrow {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow);
+}
+
+.wind-marker__speed {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--forest);
+  background: rgba(255,255,255,0.92);
+  border-radius: 99px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border);
+}
+
+.fire-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.fire-marker__triangle {
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-bottom: 14px solid #C4483F;
+  filter: drop-shadow(0 1px 3px rgba(196, 72, 63, 0.45));
+}
+
+.fire-marker__label {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--white);
+  background: #C4483F;
+  border-radius: 3px;
+  padding: 1px 4px;
+  white-space: nowrap;
+  line-height: 1.4;
+  text-align: center;
+}

@@ -1,0 +1,100 @@
+/* ── Shell ────────────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Backend-unreachable banner */
+.backend-banner {
+  background: #FEF3C7;
+  border-bottom: 1px solid #D97706;
+  color: #92400E;
+  font-family: Inter, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 20px;
+  text-align: center;
+  flex-shrink: 0;
+  z-index: 200;
+}
+
+/* Body = row below topbar: LeftPanel | Map | RightPanel */
+.app__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Map area — fills all space between left and right panels */
+.app__map {
+  flex: 1;
+  position: relative;
+  background: var(--mist);
+  overflow: hidden;
+  min-width: 0; /* allow shrinking below content size */
+}
+
+/* ── Population legend (rendered inside .app__map) ──────── */
+.pop-legend {
+  position: absolute;
+  bottom: 210px;
+  right: 16px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  min-width: 140px;
+  z-index: 100;
+}
+.pop-legend-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.pop-legend-bar {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(to right, #F3E5F5, #4A148C);
+  margin-bottom: 4px;
+}
+.pop-legend-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 900px) {
+  /* Stack: map on top, left panel + right panel below side by side */
+  .app__body {
+    flex-direction: column;
+  }
+
+  .app__map {
+    order: -1;
+    height: 50vw;
+    min-height: 200px;
+    flex: none;
+  }
+
+  :root { --panel-w: 100%; }
+
+  .panel {
+    width: 100%;
+    height: auto;
+    max-height: calc(100vh - var(--topbar-h) - 50vw - 40vh);
+    border-right: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .topbar { padding: 0 var(--s2); }
+  .topbar__name { font-size: 18px; }
+}
