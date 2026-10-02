@@ -840,6 +840,7 @@ export default function ShwasMap({
     vis('wards-pop',         layers.population);
     vis('slums-fill',        layers.slums);
     vis('heatmap-layer',     layers.heatmap);
+    vis('wards-aqi',         layers.heatmap);
   }, [layers]);
 
   // ── Update station GeoJSON ───────────────────────────────────
