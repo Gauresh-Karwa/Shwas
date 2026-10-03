@@ -20,10 +20,10 @@ import ShwasMap from './components/ShwasMap';
 import TimeSlider from './components/TimeSlider';
 
 import { getCategory, dominantPollutant } from './utils/aqi';
-import { nearestStation } from './utils/geo';
+import { nearestStation, ptInFeature } from './utils/geo';
+import { loadWardData } from './data/wardData';
 import { useLiveData } from './hooks/useLiveData';
 
-import { SEED_STATIONS } from './data/stations';
 
 const DEFAULT_LAYERS = {
   stations: true,
@@ -41,7 +41,25 @@ function cityAqi(stations) {
   if (!vals.length) return null;
   return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
 }
-
+// Which ward contains this point? Name comes from live /api/wards data.
+async function placeNameAt(lat, lon, wardExposure) {
+  try {
+    const { geojson } = await loadWardData();
+    const feat = geojson.features.find(f => ptInFeature(lon, lat, f)); // lon first
+    const code = feat?.properties.wardCode;
+    return wardExposure?.wards?.find(w => w.ward_id === code)?.ward_name ?? null;
+  } catch {
+    return null;
+  }
+}
+// Average AQI weighted by ward population (same basis as the exposure bar)
+function populationWeightedAqi(wardExposure) {
+  let num = 0, den = 0;
+  for (const w of wardExposure?.wards ?? []) {
+    if (w.aqi != null && w.population > 0) { num += w.aqi * w.population; den += w.population; }
+  }
+  return den > 0 ? Math.round(num / den) : null;
+}
 export default function App() {
   const {
     stations,
@@ -59,7 +77,8 @@ export default function App() {
     attributionError,
     fetchAttributionFor,
     fetchForecastFor,
-  } = useLiveData(SEED_STATIONS);
+    forecastLoadingId,
+  } = useLiveData();
 
   // ── Layer toggles
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
@@ -87,7 +106,7 @@ export default function App() {
     return {
       lat: est.lat, lon: est.lon,
       aqi: Math.round(est.estimated_aqi ?? 0),
-      name: 'Selected location',
+      name: est.place ? `${est.place}, Mumbai` : 'this location',
       dominantPollutant: near ? dominantPollutant(near) : undefined,
     };
   }, [stations]);
@@ -100,12 +119,14 @@ export default function App() {
     await fetchAttributionFor(stationCtx(station));
   }, [fetchAttributionFor, fetchForecastFor, stationCtx]);
 
-  const handleClickEstimate = useCallback((result) => {
-    setClickEstimate(result);
-    setSelectedStation(null);
-    setHintVisible(false);
-    fetchAttributionFor(pointCtx(result));
-  }, [fetchAttributionFor, pointCtx]);
+  const handleClickEstimate = useCallback(async (result) => {
+  const place = await placeNameAt(result.lat, result.lon, wardExposure);
+  const withPlace = { ...result, place };
+  setClickEstimate(withPlace);
+  setSelectedStation(null);
+  setHintVisible(false);
+  fetchAttributionFor(pointCtx(withPlace));
+  }, [fetchAttributionFor, pointCtx, wardExposure]);
 
   const handleCloseEstimate = useCallback(() => {
     setClickEstimate(null);
@@ -124,7 +145,7 @@ export default function App() {
 
   // ── Derived ───────────────────────────────────────────────────────
   const liveStations = stations.filter(s => s.aqi != null && s.aqi > 0);
-  const cAqi = cityAqi(liveStations) ?? null;
+  const cAqi = populationWeightedAqi(wardExposure) ?? cityAqi(liveStations);
   const cleanest = liveStations.length ? [...liveStations].sort((a, b) => a.aqi - b.aqi)[0] : null;
   const worst = liveStations.length ? [...liveStations].sort((a, b) => b.aqi - a.aqi)[0] : null;
 
@@ -141,7 +162,7 @@ export default function App() {
 
   const forecastsReady = Object.keys(allForecasts || {}).length > 0;
   const forecast = selectedStation ? (allForecasts || {})[selectedStation.id] : null;
-  const forecastLoading = false; // Simplified since it's pre-fetched
+  const forecastLoading = !!selectedStation && forecastLoadingId === selectedStation.id && !forecast; // Simplified since it's pre-fetched
 
   return (
     <div className="app">

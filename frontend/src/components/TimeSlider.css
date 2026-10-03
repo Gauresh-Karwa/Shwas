@@ -3,8 +3,9 @@
 ──────────────────────────────────────────────────────────────────── */
 .ts-card {
   position: absolute;
-  bottom: 60px;
-  left: 16px;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 100;
   background: var(--white);
   border: 1px solid var(--border);

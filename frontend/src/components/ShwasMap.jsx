@@ -222,7 +222,20 @@ async function runConcurrent(tasks, limit, onEach) {
 // ── Ward AQI now computed in useLiveData ──────────────────────────
 
 const fmtPop = n => (n == null ? 'N/A' : Number(n).toLocaleString('en-IN'));
-
+// Copy live ward names (from /api/wards) onto the ward polygons.
+// Returns true if any name changed.
+function applyLiveWardNames(geo, wardAqi) {
+  let changed = false;
+  geo?.features?.forEach(f => {
+    const d = wardAqi?.[f.properties.wardCode];
+    const liveName = d?.ward_name ?? d?.name;
+    if (liveName && f.properties.wardName !== liveName) {
+      f.properties.wardName = liveName;
+      changed = true;
+    }
+  });
+  return changed;
+}
 // ── Component ─────────────────────────────────────────────────────
 export default function ShwasMap({
   layers,
@@ -412,10 +425,14 @@ export default function ShwasMap({
     styleReadyRef.current = true;
 
     // 3 – fitBounds to Mumbai wards
-    map.fitBounds(bounds, { padding: 32, duration: 800, maxZoom: 12 });
+    map.fitBounds(bounds, {
+      padding: { top: 40, left: 40, right: 40, bottom: 130 }, // bottom room for the slider
+      duration: 0,
+      maxZoom: 12,
+    });
     const [[w, s], [e, n]] = bounds;
     // Clamp panning to just around Mumbai (ward bounds + small buffer)
-    map.setMaxBounds([[w - 0.05, s - 0.05], [e + 0.05, n + 0.05]]);
+    map.setMaxBounds([[w - 0.05, s - 0.12], [e + 0.05, n + 0.05]]);
 
     // 4 – Build smooth heatmap canvas source ─────────────────────────
     const heatCanvas = document.createElement('canvas');
@@ -465,7 +482,8 @@ export default function ShwasMap({
 
     map.triggerRepaint();
     diagnoseHeatmap(map);
-
+    applyLiveWardNames(geojson, wardAqiRef.current);
+    
     // 5 – Ward source + layers ───────────────────────────────
     map.addSource('wards', {
       type: 'geojson', data: geojson, promoteId: 'wardCode',
@@ -548,15 +566,15 @@ export default function ShwasMap({
       id: 'wards-labels',
       type: 'symbol',
       source: 'wards',
-      minzoom: 10,
+      minzoom: 11,
       layout: {
         visibility: layersRef.current.boundaries ? 'visible' : 'none',
         'text-field': ['get', 'wardName'],
         'text-font': ['Noto Sans Regular'],
-        'text-size': 13,
+        'text-size': 11,
         'text-anchor': 'center',
-        'text-allow-overlap': true,
-        'text-ignore-placement': true,
+        'text-allow-overlap': false,
+        'text-ignore-placement': false,
       },
       paint: {
         'text-color': '#17241E',
@@ -652,8 +670,8 @@ export default function ShwasMap({
       const cat = aqi != null ? getCategory(aqi) : null;
       const count = wardData.count || 0;
       const estimated = wardData.estimated || false;
-      // Show ward name: prefer wardName property, fall back to code (strip "(T)" style doubles)
-      const wName = feat.properties.wardName ?? id ?? '';
+      // Show ward name: prefer wardName from API, then geojson, then code
+      const wName = wardData.ward_name ?? feat.properties.wardName ?? id ?? '';
       const wLabel = wName !== id ? `${wName} (${id})` : wName;
 
       // Position tooltip offset from cursor, keep inside map edges
@@ -707,7 +725,7 @@ export default function ShwasMap({
       popupRef.current.setLngLat(e.lngLat).setHTML(`
         <div class="shwas-popup-inner shwas-station-tooltip">
           <div class="shwas-popup-name">${p.name}</div>
-          <div class="shwas-popup-sub">${p.agency} · Ward ${p.ward}</div>
+          <div class="shwas-popup-sub">${[p.agency, p.ward ? 'Ward ' + p.ward : null].filter(Boolean).join(' · ')}</div>
           <div class="shwas-popup-aqi" style="color:${p.color}">
             <span class="aqi-chip" style="background:${p.color}">${p.aqi}</span>
             <span class="shwas-popup-cat">${getCategory(p.aqi).label}</span>
@@ -787,12 +805,14 @@ export default function ShwasMap({
   }
 
   /** Return stations with AQI values at the given forecast offset (0 = live). */
-  function getStationsAtOffset(stations, fcMap, offset) {
+    function getStationsAtOffset(stations, fcMap, offset) {
     if (!offset || !fcMap) return stations;
     return stations.map(s => {
       const fc = fcMap[s.id];
       const idx = Math.min(offset, (fc?.length ?? 0) - 1);
-      const aqi = (idx >= 0 ? fc[idx]?.aqi : null) ?? s.aqi;
+      const raw = idx >= 0 ? fc[idx]?.aqi : null;
+      // missing or 0 means "no forecast", so keep the live value
+      const aqi = raw != null && raw > 0 ? Math.round(raw) : s.aqi;
       return { ...s, aqi };
     });
   }
@@ -876,7 +896,10 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-
+    
+    if (applyLiveWardNames(wardGeoRef.current, wardAqi)) {
+      map.getSource('wards')?.setData(wardGeoRef.current);
+    }
     const colorStops = Object.entries(wardAqi).flatMap(([code, data]) => [code, getAQIColor(data.aqi)]);
     if (colorStops.length) {
       try {
@@ -950,7 +973,7 @@ export default function ShwasMap({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [forecastOffset, allForecasts]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [forecastOffset, allForecasts, stationPoints]); // eslint-disable-line react-hooks/exhaustive-deps // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Wind arrow marker ────────────────────────────────────────
   useEffect(() => {
