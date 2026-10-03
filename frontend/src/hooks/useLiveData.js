@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  fetchLiveStations, forecastStation, getAttribution, checkHealth,
+  fetchLiveStations, forecastStation, getAttributionFor, checkHealth,
   fetchWardExposure, fetchHotspots, fetchSensorSites,
 } from '../utils/api';
 import { STATIONS as MOCK_STATIONS, createMockForecast } from '../data/mockData';
 import { loadWardData } from '../data/wardData';
-import { computeWardAqi } from '../utils/geo';
+import { computeWardAqi, mergeWardAqi } from '../utils/geo';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const REFRESH_MS = 5 * 60 * 1000;
@@ -33,11 +33,11 @@ export function useLiveData(seedStations) {
         setBackendDown(false);
         setLastUpdated(new Date().toISOString()); // Mock gets current time
         setLoading(false);
-        
+
         const results = {};
         MOCK_STATIONS.forEach(s => { results[s.id] = createMockForecast(s.aqi); });
         setAllForecasts(results);
-        
+
         loadWardData().then(({ geojson }) => {
           setWardAqi(computeWardAqi(geojson, MOCK_STATIONS));
         }).catch(err => console.error(err));
@@ -48,23 +48,22 @@ export function useLiveData(seedStations) {
     try {
       // First verify backend is up and get the response timestamp
       const { timestamp } = await checkHealth();
-      
+
       const live = await fetchLiveStations(seedStations);
       const valid = live.filter(s => s.aqi != null);
-      
+
       if (valid.length > 0) {
         setStations(valid);
-        
+
         // Prefer the authoritative ward exposure from the backend
         try {
           const wardData = await fetchWardExposure();
           setWardExposure(wardData);
-          // Build a wardId → { aqi, count } map for ShwasMap tooltips
-          const wardMap = {};
-          for (const w of (wardData.wards ?? [])) {
-            wardMap[w.ward_id] = { aqi: Math.round(w.aqi), count: 1, estimated: w.method !== 'sensor' };
-          }
-          setWardAqi(wardMap);
+          // Build a wardId → { aqi, count, estimated } map for ShwasMap tooltips.
+          // Wards containing live stations use the measured mean; others use
+          // the backend GNN/IDW estimate.
+          const { geojson } = await loadWardData();
+          setWardAqi(mergeWardAqi(wardData.wards, computeWardAqi(geojson, valid)));
         } catch (_) {
           // Fallback to client-side centroid calculation if backend unreachable
           try {
@@ -74,7 +73,7 @@ export function useLiveData(seedStations) {
             console.error('Failed to compute ward AQI:', err);
           }
         }
-        
+
         // Try to find a station with an actual updated_at, otherwise use the server response date
         let updatedTime = timestamp;
         for (const s of valid) {
@@ -85,7 +84,7 @@ export function useLiveData(seedStations) {
         }
         setLastUpdated(updatedTime);
       }
-      
+
       setBackendDown(false);
 
       // Pre-fetch forecasts, hotspots, sensor sites (initial only)
@@ -110,7 +109,7 @@ export function useLiveData(seedStations) {
     } catch (e) {
       setBackendDown(true);
       // Keep last good real data, but set lastUpdated to null to trigger "No live data"
-      setLastUpdated(null); 
+      setLastUpdated(null);
     } finally {
       if (isInitial) setLoading(false);
     }
@@ -134,13 +133,7 @@ export function useLiveData(seedStations) {
     setAttributionLoading(true);
 
     try {
-      const data = await getAttribution(
-        ctx.lat, ctx.lon,
-        ctx.name ?? 'Unknown location',
-        ctx.aqi ?? 0,
-        ctx.category ?? 'Moderate',
-        'PM2.5'
-      );
+      const data = await getAttributionFor(ctx);
       setAttribution({ ...data, fetched_at: new Date().toISOString() });
     } catch {
       setAttributionError(true);

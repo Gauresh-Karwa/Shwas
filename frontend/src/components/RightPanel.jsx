@@ -47,15 +47,15 @@ function ForecastChart({ forecasts, currentOffset }) {
   const uppers = forecasts.map(f => f.aqi_upper ?? f.aqi);
   const center = forecasts.map(f => f.aqi);
 
-  const minV  = Math.min(...lowers) * 0.92;
-  const maxV  = Math.max(...uppers) * 1.06;
+  const minV = Math.min(...lowers) * 0.92;
+  const maxV = Math.max(...uppers) * 1.06;
   const range = Math.max(maxV - minV, 1);
 
   const px = i => +((i / (n - 1)) * W).toFixed(2);
   const py = v => +((H - ((v - minV) / range) * H)).toFixed(2);
 
   const peakAqi = Math.max(...center);
-  const lowAqi  = Math.min(...center);
+  const lowAqi = Math.min(...center);
 
   const bandUp = forecasts.map((f, i) =>
     `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi_upper ?? f.aqi)}`).join('');
@@ -65,7 +65,7 @@ function ForecastChart({ forecasts, currentOffset }) {
     `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi)}`).join('');
 
   const tickIdxs = [0, 6, 12, 18, n - 1].filter(i => i < n);
-  const fmtTick  = ts => {
+  const fmtTick = ts => {
     try {
       return new Date(ts).toLocaleTimeString('en-IN', {
         hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata',
@@ -117,9 +117,9 @@ function SourceTag({ pm25, pm10 }) {
   if (pm25 == null || pm10 == null || pm10 === 0) return null;
   const ratio = Math.min(pm25 / pm10, 1.0);
   let label, color;
-  if (ratio >= 0.60)      { label = `Fine-fraction ${ratio.toFixed(2)} · Combustion / vehicular`; color = '#E08A3C'; }
-  else if (ratio <= 0.35) { label = `Fine-fraction ${ratio.toFixed(2)} · Dust dominated`;          color = '#A3B94F'; }
-  else                    { label = `Fine-fraction ${ratio.toFixed(2)} · Mixed profile`;            color = '#E0B341'; }
+  if (ratio >= 0.60) { label = `Fine-fraction ${ratio.toFixed(2)} · Combustion / vehicular`; color = '#E08A3C'; }
+  else if (ratio <= 0.35) { label = `Fine-fraction ${ratio.toFixed(2)} · Dust dominated`; color = '#A3B94F'; }
+  else { label = `Fine-fraction ${ratio.toFixed(2)} · Mixed profile`; color = '#E0B341'; }
   return (
     <div style={{
       margin: '4px var(--s2) 0',
@@ -139,9 +139,9 @@ function SourceTag({ pm25, pm10 }) {
 function PollutantGrid({ station }) {
   const items = [
     { key: 'pm25', label: 'PM2.5' },
-    { key: 'pm10', label: 'PM10'  },
-    { key: 'no2',  label: 'NO₂'   },
-    { key: 'so2',  label: 'SO₂'   },
+    { key: 'pm10', label: 'PM10' },
+    { key: 'no2', label: 'NO₂' },
+    { key: 'so2', label: 'SO₂' },
   ];
   return (
     <>
@@ -163,12 +163,12 @@ function PollutantGrid({ station }) {
 function Skeleton() {
   return (
     <div className="rp-skeleton" aria-busy="true" aria-label="Loading attribution">
-      <span className="skeleton" style={{ width: '90%',  height: 14, marginBottom: 8 }} />
+      <span className="skeleton" style={{ width: '90%', height: 14, marginBottom: 8 }} />
       <span className="skeleton" style={{ width: '100%', height: 14, marginBottom: 8 }} />
-      <span className="skeleton" style={{ width: '75%',  height: 14, marginBottom: 20 }} />
-      <span className="skeleton" style={{ width: 120,    height: 12, marginBottom: 12 }} />
-      <span className="skeleton" style={{ width: '60%',  height: 12, marginBottom: 12 }} />
-      <span className="skeleton" style={{ width: '50%',  height: 12, marginBottom: 20 }} />
+      <span className="skeleton" style={{ width: '75%', height: 14, marginBottom: 20 }} />
+      <span className="skeleton" style={{ width: 120, height: 12, marginBottom: 12 }} />
+      <span className="skeleton" style={{ width: '60%', height: 12, marginBottom: 12 }} />
+      <span className="skeleton" style={{ width: '50%', height: 12, marginBottom: 20 }} />
       {[1, 2, 3].map(i => (
         <span key={i} className="skeleton" style={{ width: '85%', height: 13, marginBottom: 8 }} />
       ))}
@@ -190,8 +190,8 @@ export default function RightPanel({
 }) {
   const isOpen = !!(selectedContext || loading || error);
 
-  const aqi  = selectedContext?.aqi ?? 0;
-  const cat  = getCategory(aqi);
+  const aqi = selectedContext?.aqi ?? 0;
+  const cat = getCategory(aqi);
   const name = selectedContext?.name ?? null;
 
   const fmtTime = iso => {
@@ -256,9 +256,9 @@ export default function RightPanel({
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
               stroke="var(--border)" strokeWidth="1.5" strokeLinecap="round"
               style={{ marginBottom: 10 }}>
-              <circle cx="12" cy="12" r="10"/>
-              <line x1="12" y1="8" x2="12" y2="12"/>
-              <line x1="12" y1="16" x2="12.01" y2="16"/>
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
             <p className="rp-error__msg">Explanation is unavailable right now.</p>
             <button className="rp-retry" onClick={onRetry}>Try again</button>
@@ -300,8 +300,8 @@ export default function RightPanel({
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                   stroke="var(--sage)" strokeWidth="2"
                   strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8.5 14.5A3.5 3.5 0 0 0 12 18a3.5 3.5 0 0 0 3.5-3.5c0-2-1.5-4-3.5-7-2 3-3.5 5-3.5 7z"/>
-                  <path d="M12 11c0-2 1.5-3.5 3-5"/>
+                  <path d="M8.5 14.5A3.5 3.5 0 0 0 12 18a3.5 3.5 0 0 0 3.5-3.5c0-2-1.5-4-3.5-7-2 3-3.5 5-3.5 7z" />
+                  <path d="M12 11c0-2 1.5-3.5 3-5" />
                 </svg>
               </div>
               <div className="rp-row__body">
@@ -317,7 +317,7 @@ export default function RightPanel({
                           <span className="rp-fire-dot" />
                           <span>
                             {f.distance_km != null ? `${f.distance_km} km away` : 'Nearby'}
-                            {f.intensity_mw != null && ` · ${f.intensity_mw} MW`}
+                            {f.frp_mw != null && ` · ${Number(f.frp_mw).toFixed(1)} MW`}
                           </span>
                         </div>
                       ))}
@@ -339,8 +339,8 @@ export default function RightPanel({
                     <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
                       className="rp-news-item">
                       <span className="rp-news-item__title">{item.title}</span>
-                      {item.source && (
-                        <span className="rp-news-item__source">{item.source}</span>
+                      {item.domain && (
+                        <span className="rp-news-item__source">{item.domain}</span>
                       )}
                     </a>
                   ))}

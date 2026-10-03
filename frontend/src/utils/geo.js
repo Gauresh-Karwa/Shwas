@@ -28,7 +28,7 @@ export function isLand(lng, lat, features) {
 export function computeWardAqi(wardsGeoJSON, stations) {
   const wardsMap = {};
   const validStations = (stations ?? []).filter(s => s.aqi != null && s.aqi > 0);
-  
+
   if (!wardsGeoJSON?.features?.length || !validStations.length) return wardsMap;
 
   wardsGeoJSON.features.forEach(ward => {
@@ -63,7 +63,7 @@ export function computeWardAqi(wardsGeoJSON, stations) {
       })).sort((a, b) => a.dist - b.dist);
 
       const nearest = stationsWithDist.slice(0, 3);
-      
+
       let idwNum = 0, idwDen = 0;
       nearest.forEach(st => {
         const d = Math.max(st.dist, 1e-5);
@@ -71,7 +71,7 @@ export function computeWardAqi(wardsGeoJSON, stations) {
         idwNum += w * st.aqi;
         idwDen += w;
       });
-      
+
       const aqi = idwDen > 0 ? Math.round(idwNum / idwDen) : null;
       if (aqi !== null) {
         wardsMap[wardCode] = { aqi, estimated: true, count: 0 };
@@ -80,4 +80,33 @@ export function computeWardAqi(wardsGeoJSON, stations) {
   });
 
   return wardsMap;
+}
+
+// ── Merge backend ward estimates with in-ward station readings ────
+// backendWards : /api/wards `wards` array ({ ward_id, aqi, method, ... })
+// sensorWardAqi: computeWardAqi() output ({ [wardCode]: { aqi, count, ... } })
+// Rule: a ward that contains live station(s) shows the measured mean of
+// those readings; otherwise it shows the backend (GNN/IDW) estimate.
+export function mergeWardAqi(backendWards, sensorWardAqi) {
+  const out = {};
+  for (const w of (backendWards ?? [])) {
+    const sensor = sensorWardAqi?.[w.ward_id];
+    if (sensor && sensor.count > 0) {
+      out[w.ward_id] = { aqi: sensor.aqi, count: sensor.count, estimated: false };
+    } else {
+      out[w.ward_id] = { aqi: Math.round(w.aqi), count: 0, estimated: true };
+    }
+  }
+  return out;
+}
+
+export function nearestStation(lat, lon, stations, accept = () => true) {
+  const kx = Math.cos((lat * Math.PI) / 180);
+  let best = null, bestD = Infinity;
+  for (const st of (stations ?? [])) {
+    if (st.lat == null || st.lon == null || !accept(st)) continue;
+    const d = Math.hypot((st.lon - lon) * kx, st.lat - lat);
+    if (d < bestD) { best = st; bestD = d; }
+  }
+  return best;
 }

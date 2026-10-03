@@ -31,7 +31,7 @@ def forecast_coordinate(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@router.get("/forecast/{station_id}")
+@router.get("/forecast/{station_id:path}")
 def forecast(
     station_id: str,
     steps: int = Query(24, ge=1, le=168, description="Number of hourly steps to forecast"),

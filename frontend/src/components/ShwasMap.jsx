@@ -42,97 +42,103 @@ const HEAT_COORDS = [
   [GEO.W, GEO.S],
 ];
 
-// ── Gaussian blur (separable, 6px sigma) ──────────────────────────
-function gaussianBlur(ctx, width, height, sigma = 6) {
-  const radius = Math.ceil(sigma * 3);
-  const kernel = [];
-  let sum = 0;
-  for (let x = -radius; x <= radius; x++) {
-    const w = Math.exp(-(x * x) / (2 * sigma * sigma));
-    kernel.push({ x, w });
-    sum += w;
-  }
-  kernel.forEach(k => k.w /= sum);
-
-  const src = ctx.getImageData(0, 0, width, height);
-  const tmp = new ImageData(width, height);
-  const dst = ctx.createImageData(width, height);
-  const sd = src.data, td = tmp.data, dd = dst.data;
-
-  // Horizontal pass
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, b = 0, a = 0;
-      kernel.forEach(k => {
-        const sx = Math.min(Math.max(x + k.x, 0), width - 1);
-        const i = (y * width + sx) * 4;
-        r += sd[i] * k.w;
-        g += sd[i + 1] * k.w;
-        b += sd[i + 2] * k.w;
-        a += sd[i + 3] * k.w;
-      });
-      const o = (y * width + x) * 4;
-      td[o] = r; td[o + 1] = g; td[o + 2] = b; td[o + 3] = a;
-    }
-  }
-
-  // Vertical pass
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let r = 0, g = 0, b = 0, a = 0;
-      kernel.forEach(k => {
-        const sy = Math.min(Math.max(y + k.x, 0), height - 1);
-        const i = (sy * width + x) * 4;
-        r += td[i] * k.w;
-        g += td[i + 1] * k.w;
-        b += td[i + 2] * k.w;
-        a += td[i + 3] * k.w;
-      });
-      const o = (y * width + x) * 4;
-      dd[o] = r; dd[o + 1] = g; dd[o + 2] = b; dd[o + 3] = a;
-    }
-  }
-
-  ctx.putImageData(dst, 0, 0);
+// ── Gaussian blur (3-pass box-blur approximation, O(pixels)) ──────
+// Box widths that approximate a gaussian of the given sigma in n passes.
+function boxesForGauss(sigma, n) {
+  const wIdeal = Math.sqrt((12 * sigma * sigma) / n + 1);
+  let wl = Math.floor(wIdeal);
+  if (wl % 2 === 0) wl--;
+  const wu = wl + 2;
+  const mIdeal = (12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4);
+  const m = Math.round(mIdeal);
+  return Array.from({ length: n }, (_, i) => (i < m ? wl : wu));
 }
 
-// ── Draw ward polygon paths on canvas for clipping ────────────────
-function drawWardClip(ctx, wardsGeoJSON, bounds) {
-  if (!wardsGeoJSON?.features?.length) return;
+// One edge-clamped running-sum box pass over RGBA data (horizontal or vertical).
+function boxBlurPass(src, dst, width, height, r, horizontal) {
+  const len = horizontal ? width : height;
+  const lines = horizontal ? height : width;
+  const stride = horizontal ? 4 : width * 4;
+  const lineStep = horizontal ? width * 4 : 4;
+  const inv = 1 / (r + r + 1);
+
+  for (let line = 0; line < lines; line++) {
+    const base = line * lineStep;
+    for (let c = 0; c < 4; c++) {
+      const first = src[base + c];
+      const last = src[base + (len - 1) * stride + c];
+      let val = (r + 1) * first;
+      for (let j = 0; j < r; j++) val += src[base + j * stride + c];
+      for (let j = 0; j <= r; j++) {
+        val += src[base + (j + r) * stride + c] - first;
+        dst[base + j * stride + c] = val * inv;
+      }
+      for (let j = r + 1; j < len - r; j++) {
+        val += src[base + (j + r) * stride + c] - src[base + (j - r - 1) * stride + c];
+        dst[base + j * stride + c] = val * inv;
+      }
+      for (let j = len - r; j < len; j++) {
+        val += last - src[base + (j - r - 1) * stride + c];
+        dst[base + j * stride + c] = val * inv;
+      }
+    }
+  }
+}
+
+function gaussianBlur(ctx, width, height, sigma = 6) {
+  const img = ctx.getImageData(0, 0, width, height);
+  const a = img.data;
+  const b = new Uint8ClampedArray(a.length);
+  for (const size of boxesForGauss(sigma, 3)) {
+    const r = (size - 1) / 2;
+    boxBlurPass(a, b, width, height, r, true);
+    boxBlurPass(b, a, width, height, r, false);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// ── Trace all ward polygons into the current canvas path ──────────
+function traceWardPath(ctx, wardsGeoJSON, bounds) {
   const [[w, s], [e, n]] = bounds;
   const scaleX = SMOOTH_COLS / (e - w);
   const scaleY = SMOOTH_ROWS / (n - s);
-  
+
+  const traceRing = ring => {
+    ring.forEach(([lng, lat], i) => {
+      const x = (lng - w) * scaleX;
+      const y = (n - lat) * scaleY; // flip Y
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+  };
+
   ctx.beginPath();
   wardsGeoJSON.features.forEach(feat => {
     const coords = feat.geometry.coordinates;
     if (feat.geometry.type === 'Polygon') {
-      coords.forEach(ring => {
-        ring.forEach(([lng, lat], i) => {
-          const x = (lng - w) * scaleX;
-          const y = (n - lat) * scaleY; // flip Y
-          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-        });
-        ctx.closePath();
-      });
+      coords.forEach(traceRing);
     } else if (feat.geometry.type === 'MultiPolygon') {
-      coords.forEach(poly => {
-        poly.forEach(ring => {
-          ring.forEach(([lng, lat], i) => {
-            const x = (lng - w) * scaleX;
-            const y = (n - lat) * scaleY;
-            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-          });
-          ctx.closePath();
-        });
-      });
+      coords.forEach(poly => poly.forEach(traceRing));
     }
   });
-  ctx.clip();
+}
+
+// ── AQI colour → [r, g, b] (cached) ───────────────────────────────
+const rgbCache = {};
+function aqiRgb(aqi) {
+  const hex = getAQIColor(aqi);
+  if (!rgbCache[hex]) {
+    rgbCache[hex] = [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+  return rgbCache[hex];
 }
 
 // ── Styles ────────────────────────────────────────────────────────
-const OFM_STYLE    = 'https://tiles.openfreemap.org/styles/positron';
+const OFM_STYLE = 'https://tiles.openfreemap.org/styles/positron';
 const ESRI_FALLBACK = {
   version: 8,
   sources: {
@@ -149,7 +155,7 @@ const ESRI_FALLBACK = {
     },
   },
   layers: [
-    { id: 'esri-base',   type: 'raster', source: 'esri',     minzoom: 0, maxzoom: 22 },
+    { id: 'esri-base', type: 'raster', source: 'esri', minzoom: 0, maxzoom: 22 },
     { id: 'esri-labels', type: 'raster', source: 'esri-ref', minzoom: 0, maxzoom: 22 },
   ],
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
@@ -215,7 +221,7 @@ async function runConcurrent(tasks, limit, onEach) {
 
 // ── Ward AQI now computed in useLiveData ──────────────────────────
 
-const fmtPop  = n => (n == null ? 'N/A' : Number(n).toLocaleString('en-IN'));
+const fmtPop = n => (n == null ? 'N/A' : Number(n).toLocaleString('en-IN'));
 
 // ── Component ─────────────────────────────────────────────────────
 export default function ShwasMap({
@@ -226,42 +232,42 @@ export default function ShwasMap({
   onStationClick,
   onClickEstimate,
   forecastOffset = 0,    // 0-23 hours; 0 = live
-  allForecasts   = null, // { [stationId]: forecast[] }
-  windData       = null, // { speed_mps, direction_deg, compass } | null
-  firesData      = null, // [{lat, lon, distance_km, intensity_mw}] | null
-  hotspots       = [],   // [{lat, lon, ward_name, lcb, lcb_category}]
-  sensorSites    = [],   // [{lat, lon, ward_name, score, estimated_aqi}]
+  allForecasts = null, // { [stationId]: forecast[] }
+  windData = null, // { speed_mps, direction_deg, compass } | null
+  firesData = null, // [{lat, lon, distance_km, frp_mw}] | null
+  hotspots = [],   // [{lat, lon, ward_name, lcb, lcb_category}]
+  sensorSites = [],   // [{lat, lon, ward_name, score, estimated_aqi}]
 }) {
-  const containerRef        = useRef(null);
-  const mapRef              = useRef(null);
-  const heatCanvasRef       = useRef(null);   // offscreen canvas element
-  const heatCtxRef          = useRef(null);   // canvas 2d context
-  const landCellsRef        = useRef([]);     // land-only grid cells (computed once)
-  const originalPixelsRef   = useRef(null);   // ImageData snapshot after GNN pass
-  const rafRef              = useRef(null);   // pending requestAnimationFrame id
-  const pinMarkerRef        = useRef(null);   // click-estimate marker
-  const popupRef            = useRef(null);
-  const initRef             = useRef(false);
-  const apiCacheRef         = useRef(new Map());
-  const styleReadyRef       = useRef(false);
-  const windMarkerRef       = useRef(null);   // HTMLMarker for wind arrow
-  const fireMarkersRef      = useRef([]);     // array of HTMLMarkers for fires
-  const hotspotMarkersRef   = useRef([]);     // array of HTMLMarkers for LCB hotspots
-  const sensorMarkersRef    = useRef([]);     // array of HTMLMarkers for sensor sites
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const heatCanvasRef = useRef(null);   // offscreen canvas element
+  const heatCtxRef = useRef(null);   // canvas 2d context
+  const landCellsRef = useRef([]);     // land-only grid cells (computed once)
+  const rafRef = useRef(null);   // pending requestAnimationFrame id
+  const pinMarkerRef = useRef(null);   // click-estimate marker
+  const popupRef = useRef(null);
+  const initRef = useRef(false);
+  const apiCacheRef = useRef(new Map());
+  const styleReadyRef = useRef(false);
+  const windMarkerRef = useRef(null);   // HTMLMarker for wind arrow
+  const fireMarkersRef = useRef([]);     // array of HTMLMarkers for fires
+  const hotspotMarkersRef = useRef([]);     // array of HTMLMarkers for LCB hotspots
+  const sensorMarkersRef = useRef([]);     // array of HTMLMarkers for sensor sites
 
   // Always-current prop mirrors (safe inside async / RAF callbacks)
-  const stationPointsRef   = useRef(stationPoints);
-  const layersRef          = useRef(layers);
-  const allForecastsRef    = useRef(allForecasts);
-  const wardAqiRef         = useRef(wardAqi);
+  const wardGeoRef = useRef(null);   // annotated ward GeoJSON (set once in onLoad)
+  const stationPointsRef = useRef(stationPoints);
+  const layersRef = useRef(layers);
+  const allForecastsRef = useRef(allForecasts);
+  const wardAqiRef = useRef(wardAqi);
   useEffect(() => { stationPointsRef.current = stationPoints; }, [stationPoints]);
-  useEffect(() => { layersRef.current        = layers;         }, [layers]);
-  useEffect(() => { allForecastsRef.current  = allForecasts;   }, [allForecasts]);
-  useEffect(() => { wardAqiRef.current       = wardAqi;        }, [wardAqi]);
+  useEffect(() => { layersRef.current = layers; }, [layers]);
+  useEffect(() => { allForecastsRef.current = allForecasts; }, [allForecasts]);
+  useEffect(() => { wardAqiRef.current = wardAqi; }, [wardAqi]);
 
-  const onStationClickRef  = useRef(onStationClick);
+  const onStationClickRef = useRef(onStationClick);
   const onClickEstimateRef = useRef(onClickEstimate);
-  useEffect(() => { onStationClickRef.current  = onStationClick;  }, [onStationClick]);
+  useEffect(() => { onStationClickRef.current = onStationClick; }, [onStationClick]);
   useEffect(() => { onClickEstimateRef.current = onClickEstimate; }, [onClickEstimate]);
 
   const [unmatched, setUnmatched] = useState([]);
@@ -277,17 +283,17 @@ export default function ShwasMap({
 
     function initMap(style) {
       map = new maplibregl.Map({
-        container:          containerRef.current,
+        container: containerRef.current,
         style,
-        center:             [72.878, 19.076],  // Mumbai central
-        zoom:               11,                // tighter default
-        minZoom:            10,
-        maxZoom:            17,
-        maxBounds:          [         // restrict panning to Mumbai region
+        center: [72.878, 19.076],  // Mumbai central
+        zoom: 11,                // tighter default
+        minZoom: 10,
+        maxZoom: 17,
+        maxBounds: [         // restrict panning to Mumbai region
           [72.70, 18.85],             // SW corner
           [73.10, 19.35],             // NE corner
         ],
-        pitchWithRotate:    false,
+        pitchWithRotate: false,
         attributionControl: true,
       });
       mapRef.current = map;
@@ -327,7 +333,7 @@ export default function ShwasMap({
       const style = map.getStyle();
       const layerOrder = style?.layers?.map(l => l.id) ?? [];
       const heatmapIdx = layerOrder.indexOf('heatmap-layer');
-      
+
       console.group('[ShwasMap] Heatmap Diagnostics');
       console.log('Source exists:', !!source);
       console.log('Layer exists:', !!layer);
@@ -345,6 +351,7 @@ export default function ShwasMap({
   };
 
   // ── Heatmap drawing logic (smooth surface, clipped to wards) ───────
+  // 1) IDW → opaque RGB pixels  2) blur  3) mask to ward polygons (one fill).
   const drawHeatmap = async (map, stations, wardGeoJSON, bounds) => {
     const canvas = heatCanvasRef.current;
     const ctx = heatCtxRef.current;
@@ -352,32 +359,32 @@ export default function ShwasMap({
 
     const validStations = (stations ?? []).filter(s => s.aqi != null && s.aqi > 0);
     if (!validStations.length) return;
+    if (!wardGeoJSON?.features?.length) return;
 
-    // Clear canvas
-    ctx.clearRect(0, 0, SMOOTH_COLS, SMOOTH_ROWS);
-
-    // Clip to ward polygons
-    ctx.save();
-    drawWardClip(ctx, wardGeoJSON, bounds);
-    ctx.clip();
-
-    // Render IDW (power 2) to canvas
     const [[w, s], [e, n]] = bounds;
-    for (let col = 0; col < SMOOTH_COLS; col++) {
-      for (let row = 0; row < SMOOTH_ROWS; row++) {
+    const img = ctx.createImageData(SMOOTH_COLS, SMOOTH_ROWS);
+    const px = img.data;
+    let i = 0;
+    for (let row = 0; row < SMOOTH_ROWS; row++) {
+      const lat = n - (row + 0.5) / SMOOTH_ROWS * (n - s);
+      for (let col = 0; col < SMOOTH_COLS; col++) {
         const lng = w + (col + 0.5) / SMOOTH_COLS * (e - w);
-        const lat = n - (row + 0.5) / SMOOTH_ROWS * (n - s);
         const aqi = idwValue(lat, lng, validStations);
-        if (aqi != null) {
-          ctx.fillStyle = getAQIColor(aqi);
-          ctx.fillRect(col, row, 1, 1);
-        }
+        const [r, g, b] = aqiRgb(aqi);
+        px[i++] = r; px[i++] = g; px[i++] = b; px[i++] = 255;
       }
     }
-    ctx.restore();
+    ctx.putImageData(img, 0, 0);
 
-    // Gaussian blur
     gaussianBlur(ctx, SMOOTH_COLS, SMOOTH_ROWS, 12);
+
+    // Keep only pixels inside ward polygons
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    traceWardPath(ctx, wardGeoJSON, bounds);
+    ctx.fillStyle = '#000';
+    ctx.fill('evenodd');
+    ctx.restore();
 
     map.triggerRepaint();
   };
@@ -385,11 +392,11 @@ export default function ShwasMap({
   // ── After style loads ────────────────────────────────────────
   const onLoad = async (map) => {
     // 1 – Tint land + water (OFM positron layer ids)
-    const tryPaint = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch {} };
+    const tryPaint = (id, prop, val) => { try { map.setPaintProperty(id, prop, val); } catch { } };
     tryPaint('background', 'background-color', '#FCFEFC');
-    tryPaint('water',      'fill-color',       '#DCEBE2');
-    ['water_shadow','water_pattern'].forEach(id => tryPaint(id, 'fill-color', '#DCEBE2'));
-    ['landuse','landuse_overlay','national_park'].forEach(id => tryPaint(id, 'fill-color', '#FCFEFC'));
+    tryPaint('water', 'fill-color', '#DCEBE2');
+    ['water_shadow', 'water_pattern'].forEach(id => tryPaint(id, 'fill-color', '#DCEBE2'));
+    ['landuse', 'landuse_overlay', 'national_park'].forEach(id => tryPaint(id, 'fill-color', '#FCFEFC'));
 
     // 2 – Load ward data
     let wardData;
@@ -400,6 +407,7 @@ export default function ShwasMap({
       return;
     }
     const { geojson, bounds, unmatched: um } = wardData;
+    wardGeoRef.current = geojson;
     setUnmatched(um);
     styleReadyRef.current = true;
 
@@ -411,7 +419,7 @@ export default function ShwasMap({
 
     // 4 – Build smooth heatmap canvas source ─────────────────────────
     const heatCanvas = document.createElement('canvas');
-    heatCanvas.width  = SMOOTH_COLS;
+    heatCanvas.width = SMOOTH_COLS;
     heatCanvas.height = SMOOTH_ROWS;
     heatCanvasRef.current = heatCanvas;
     const ctx = heatCanvas.getContext('2d');
@@ -445,12 +453,12 @@ export default function ShwasMap({
     }
 
     map.addLayer({
-      id:     'heatmap-layer',
-      type:   'raster',
+      id: 'heatmap-layer',
+      type: 'raster',
       source: 'heatmap',
       layout: { visibility: layersRef.current.heatmap ? 'visible' : 'none' },
-      paint:  {
-        'raster-opacity':    0.25,
+      paint: {
+        'raster-opacity': 0.25,
         'raster-resampling': 'linear',
       },
     }, insertBefore);
@@ -512,7 +520,7 @@ export default function ShwasMap({
       id: 'wards-hover', type: 'fill', source: 'wards',
       layout: { visibility: layersRef.current.boundaries ? 'visible' : 'none' },
       paint: {
-        'fill-color':   '#DDEBE2',
+        'fill-color': '#DDEBE2',
         'fill-opacity': ['case', ['boolean', ['feature-state', 'hovered'], false], 0.40, 0],
       },
     }, insertBefore);
@@ -544,7 +552,7 @@ export default function ShwasMap({
       layout: {
         visibility: layersRef.current.boundaries ? 'visible' : 'none',
         'text-field': ['get', 'wardName'],
-        'text-font': ['Inter Regular'],
+        'text-font': ['Noto Sans Regular'],
         'text-size': 13,
         'text-anchor': 'center',
         'text-allow-overlap': true,
@@ -579,13 +587,10 @@ export default function ShwasMap({
       id: 'stations-circle', type: 'circle', source: 'stations',
       layout: { visibility: layersRef.current.stations ? 'visible' : 'none' },
       paint: {
-        'circle-radius':       14,
-        'circle-color':        ['get', 'color'],
+        'circle-radius': 14,
+        'circle-color': ['get', 'color'],
         'circle-stroke-width': 3,
         'circle-stroke-color': '#ffffff',
-        'circle-shadow-color': 'rgba(0,0,0,0.35)',
-        'circle-shadow-radius': 4,
-        'circle-shadow-offset': [0, 2],
       },
       // Show top 10 worst + 5 best at zoom < 11, all at zoom >= 11
       filter: [
@@ -603,7 +608,7 @@ export default function ShwasMap({
       layout: {
         visibility: layersRef.current.stations ? 'visible' : 'none',
         'text-field': ['get', 'aqi'],
-        'text-font': ['Inter Bold'],
+        'text-font': ['Noto Sans Bold'],
         'text-size': 11,
         'text-anchor': 'center',
         'text-allow-overlap': true,
@@ -634,7 +639,7 @@ export default function ShwasMap({
     map.on('mousemove', 'wards-hover', e => {
       if (!e.features?.length) return;
       const feat = e.features[0];
-      const id   = feat.properties.wardCode;
+      const id = feat.properties.wardCode;
       if (hoveredId && hoveredId !== id)
         map.setFeatureState({ source: 'wards', id: hoveredId }, { hovered: false });
       hoveredId = id;
@@ -665,11 +670,11 @@ export default function ShwasMap({
           <div class="shwas-popup-name">${wLabel}</div>
           <div class="shwas-popup-pop">Population: ${fmtPop(pop)}</div>
           ${aqi != null
-            ? `<div class="shwas-popup-aqi" style="color:${cat.color}">
+          ? `<div class="shwas-popup-aqi" style="color:${cat.color}">
                  <span class="aqi-chip" style="background:${cat.color}">${aqi}</span>
                  <span class="shwas-popup-cat">${cat.label}</span>
                </div>`
-            : `<div class="shwas-popup-aqi shwas-popup-nodata">AQI: No data</div>`}
+          : `<div class="shwas-popup-aqi shwas-popup-nodata">AQI: No data</div>`}
           <div class="shwas-popup-stations">
             ${count > 0 ? `${count} station${count > 1 ? 's' : ''} in this ward` : (estimated ? 'Estimated' : 'No live data')}
           </div>
@@ -687,24 +692,6 @@ export default function ShwasMap({
         popupRef.current.remove();
         hoverTimeout = null;
       }, 80);
-    });
-
-    // Click ward to pin in left panel
-    map.on('click', 'wards-hover', e => {
-      e.originalEvent.stopPropagation();
-      if (!e.features?.length) return;
-      const feat = e.features[0];
-      const wardObj = {
-        id: feat.properties.wardCode,
-        name: feat.properties.wardName,
-        ward: feat.properties.wardCode,
-        aqi: wardAqiRef.current[feat.properties.wardCode]?.aqi ?? null,
-        lat: e.lngLat.lat,
-        lon: e.lngLat.lng,
-        agency: 'BMC',
-      };
-      onStationClickRef.current?.(wardObj);
-      popupRef.current.remove();
     });
 
     // 8 – Station hover + click ──────────────────────────────
@@ -749,8 +736,11 @@ export default function ShwasMap({
     // 9 – Map click for estimate ──────────────────────────────
     map.on('click', async e => {
       const { lng, lat } = e.lngLat;
-      // Only respond if click is on land
-      if (!isLand(lng, lat, allFeatures)) return;
+      // A click on a station circle selects that station (handled above)
+      if (map.queryRenderedFeatures(e.point, { layers: ['stations-circle'] }).length) return;
+      // Only respond if click is on land (inside a ward polygon)
+      const wardFeatures = wardGeoRef.current?.features ?? [];
+      if (!isLand(lng, lat, wardFeatures)) return;
       popupRef.current.remove();
 
       // Drop dashed pin
@@ -777,12 +767,6 @@ export default function ShwasMap({
         });
       }
     });
-
-    // Save original pixels so slider can restore at offset=0
-    // (GNN pass is done; this is the best-quality baseline)
-    try {
-      originalPixelsRef.current = ctx.getImageData(0, 0, COLS, ROWS);
-    } catch {}
   };
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -806,7 +790,7 @@ export default function ShwasMap({
   function getStationsAtOffset(stations, fcMap, offset) {
     if (!offset || !fcMap) return stations;
     return stations.map(s => {
-      const fc  = fcMap[s.id];
+      const fc = fcMap[s.id];
       const idx = Math.min(offset, (fc?.length ?? 0) - 1);
       const aqi = (idx >= 0 ? fc[idx]?.aqi : null) ?? s.aqi;
       return { ...s, aqi };
@@ -841,18 +825,18 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-    const vis = (id, on) => { try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); } catch {} };
-    vis('stations-circle',   layers.stations);
-    vis('stations-ring',     layers.stations);
-    vis('stations-labels',   layers.stations);
-    vis('wards-line',        layers.boundaries);
-    vis('wards-hover',       layers.boundaries);
+    const vis = (id, on) => { try { map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none'); } catch { } };
+    vis('stations-circle', layers.stations);
+    vis('stations-ring', layers.stations);
+    vis('stations-labels', layers.stations);
+    vis('wards-line', layers.boundaries);
+    vis('wards-hover', layers.boundaries);
     vis('wards-hover-outline', layers.boundaries);
-    vis('wards-labels',      layers.boundaries);
-    vis('wards-pop',         layers.population);
-    vis('slums-fill',        layers.slums);
-    vis('heatmap-layer',     layers.heatmap);
-    vis('wards-aqi',         layers.heatmap);
+    vis('wards-labels', layers.boundaries);
+    vis('wards-pop', layers.population);
+    vis('slums-fill', layers.slums);
+    vis('heatmap-layer', layers.heatmap);
+    vis('wards-aqi', layers.heatmap);
   }, [layers]);
 
   // ── Update station GeoJSON ───────────────────────────────────
@@ -870,8 +854,8 @@ export default function ShwasMap({
       const best5 = sorted.slice(-5).map(s => s.id);
       const showIds = [...new Set([...worst10, ...best5])];
       const filter = ['any', ['>=', ['zoom'], 11], ['in', ['get', 'id'], ['literal', showIds]]];
-      try { map.setFilter('stations-circle', filter); } catch {}
-      try { map.setFilter('stations-labels', filter); } catch {}
+      try { map.setFilter('stations-circle', filter); } catch { }
+      try { map.setFilter('stations-labels', filter); } catch { }
     }
   }, [stationPoints]);
 
@@ -882,9 +866,8 @@ export default function ShwasMap({
     // Only redraw if we have actual AQI data (not the initial static seed)
     const hasRealData = (stationPoints ?? []).some(s => s.aqi != null);
     if (hasRealData) {
-      const wardsSource = map.getSource('wards');
       const b = [[GEO.W, GEO.S], [GEO.E, GEO.N]];
-      drawHeatmap(map, stationPoints ?? [], wardsSource?.getData() ?? { type: 'FeatureCollection', features: [] }, b);
+      drawHeatmap(map, stationPoints ?? [], wardGeoRef.current ?? { type: 'FeatureCollection', features: [] }, b);
       diagnoseHeatmap(map);
     }
   }, [stationPoints]);
@@ -893,18 +876,18 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-    
+
     const colorStops = Object.entries(wardAqi).flatMap(([code, data]) => [code, getAQIColor(data.aqi)]);
     if (colorStops.length) {
       try {
         map.setPaintProperty('wards-aqi', 'fill-color', [
           'match', ['get', 'wardCode'], ...colorStops, '#CCCCCC'
         ]);
-      } catch {}
+      } catch { }
     } else {
       try {
         map.setPaintProperty('wards-aqi', 'fill-color', '#CCCCCC');
-      } catch {}
+      } catch { }
     }
   }, [wardAqi]);
 
@@ -912,7 +895,7 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-    try { map.setFilter('stations-ring', ['==', ['get', 'id'], selectedStation?.id || '']); } catch {}
+    try { map.setFilter('stations-ring', ['==', ['get', 'id'], selectedStation?.id || '']); } catch { }
     if (selectedStation?.lon != null) {
       map.easeTo({ center: [selectedStation.lon, selectedStation.lat], zoom: Math.max(map.getZoom(), 12), duration: 600 });
       pinMarkerRef.current?.remove();
@@ -930,8 +913,8 @@ export default function ShwasMap({
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     rafRef.current = requestAnimationFrame(() => {
-      const offset   = forecastOffset ?? 0;
-      const fcMap    = allForecastsRef.current;
+      const offset = forecastOffset ?? 0;
+      const fcMap = allForecastsRef.current;
       const stations = stationPointsRef.current ?? [];
       const adjusted = getStationsAtOffset(stations, fcMap, offset);
 
@@ -942,10 +925,10 @@ export default function ShwasMap({
       // 2. Recolour heatmap canvas (smooth surface, clipped to wards)
       const wardsSource = map.getSource('wards');
       const b = [[GEO.W, GEO.S], [GEO.E, GEO.N]];
-      
-      const currentWardGeoJSON = wardsSource?.getData() ?? { type: 'FeatureCollection', features: [] };
+
+      const currentWardGeoJSON = wardGeoRef.current ?? { type: 'FeatureCollection', features: [] };
       drawHeatmap(map, adjusted, currentWardGeoJSON, b);
-      
+
       // 3. Recolour wards choropleth
       if (wardsSource) {
         const wardAQI = offset > 0 ? computeWardAqi(currentWardGeoJSON, adjusted) : wardAqiRef.current;
@@ -955,11 +938,11 @@ export default function ShwasMap({
             map.setPaintProperty('wards-aqi', 'fill-color', [
               'match', ['get', 'wardCode'], ...colorStops, '#CCCCCC'
             ]);
-          } catch {}
+          } catch { }
         } else {
           try {
             map.setPaintProperty('wards-aqi', 'fill-color', '#CCCCCC');
-          } catch {}
+          } catch { }
         }
       }
     });
@@ -1068,8 +1051,8 @@ export default function ShwasMap({
       const el = document.createElement('div');
       el.className = 'fire-marker';
       el.setAttribute('aria-label', `Fire ${fire.distance_km ?? '?'} km away`);
-      const mw = fire.intensity_mw != null ? `${fire.intensity_mw}MW` : '';
-      const km = fire.distance_km  != null ? `${fire.distance_km}km` : '';
+      const mw = fire.frp_mw != null ? `${Number(fire.frp_mw).toFixed(1)}MW` : '';
+      const km = fire.distance_km != null ? `${fire.distance_km}km` : '';
       el.innerHTML = `
         <div class="fire-marker__triangle"></div>
         <div class="fire-marker__label">${[km, mw].filter(Boolean).join(' · ')}</div>

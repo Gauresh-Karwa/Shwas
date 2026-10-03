@@ -13,26 +13,27 @@ import './index.css';
 import './App.css';
 import './components/ShwasMap.css';
 
-import TopBar     from './components/TopBar';
+import TopBar from './components/TopBar';
 import LeftPanel, { Legend } from './components/LeftPanel';
 import RightPanel from './components/RightPanel';
-import ShwasMap   from './components/ShwasMap';
+import ShwasMap from './components/ShwasMap';
 import TimeSlider from './components/TimeSlider';
 
-import { getCategory } from './utils/aqi';
+import { getCategory, dominantPollutant } from './utils/aqi';
+import { nearestStation } from './utils/geo';
 import { useLiveData } from './hooks/useLiveData';
 
 import { SEED_STATIONS } from './data/stations';
 
 const DEFAULT_LAYERS = {
-  stations:   true,
-  heatmap:    true,
+  stations: true,
+  heatmap: true,
   boundaries: true,
   population: false,
-  slums:      false,
-  windFires:  true,
-  hotspots:   false,
-  sensors:    false,
+  slums: false,
+  windFires: true,
+  hotspots: false,
+  sensors: false,
 };
 
 function cityAqi(stations) {
@@ -64,60 +65,74 @@ export default function App() {
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
 
   // ── Station selection
-  const [selectedStation,    setSelectedStation]    = useState(null);
-  
+  const [selectedStation, setSelectedStation] = useState(null);
+
   // ── Click-to-estimate
-  const [clickEstimate,  setClickEstimate]  = useState(null);
-  const [hintVisible,    setHintVisible]    = useState(true);
+  const [clickEstimate, setClickEstimate] = useState(null);
+  const [hintVisible, setHintVisible] = useState(true);
 
   // ── Time slider
   const [forecastOffset, setForecastOffset] = useState(0);
+
+  // Attribution request context for a station / a clicked point.
+  // A clicked point has no pollutant readings, so it borrows the dominant
+  // pollutant of the nearest station that does.
+  const stationCtx = useCallback(st => ({
+    lat: st.lat, lon: st.lon, aqi: st.aqi, name: st.name,
+    dominantPollutant: dominantPollutant(st) ?? undefined,
+  }), []);
+
+  const pointCtx = useCallback(est => {
+    const near = nearestStation(est.lat, est.lon, stations, st => dominantPollutant(st) != null);
+    return {
+      lat: est.lat, lon: est.lon,
+      aqi: Math.round(est.estimated_aqi ?? 0),
+      name: 'Selected location',
+      dominantPollutant: near ? dominantPollutant(near) : undefined,
+    };
+  }, [stations]);
 
   const handleSelectStation = useCallback(async (station) => {
     setSelectedStation(station);
     setClickEstimate(null);
     // Lazy-load forecast if it wasn't captured in the initial pre-fetch
     if (station?.id) fetchForecastFor(station.id);
-    await fetchAttributionFor(station);
-  }, [fetchAttributionFor, fetchForecastFor]);
+    await fetchAttributionFor(stationCtx(station));
+  }, [fetchAttributionFor, fetchForecastFor, stationCtx]);
 
   const handleClickEstimate = useCallback((result) => {
     setClickEstimate(result);
     setSelectedStation(null);
     setHintVisible(false);
-    fetchAttributionFor({
-      lat:  result.lat,
-      lon:  result.lon,
-      aqi:  Math.round(result.estimated_aqi ?? 0),
-      name: 'Selected location',
-    });
-  }, [fetchAttributionFor]);
+    fetchAttributionFor(pointCtx(result));
+  }, [fetchAttributionFor, pointCtx]);
 
   const handleCloseEstimate = useCallback(() => {
     setClickEstimate(null);
   }, []);
 
   const handleRetryAttribution = useCallback(() => {
-    const ctx = selectedStation || clickEstimate;
-    if (ctx) {
-      fetchAttributionFor(ctx);
+    if (selectedStation) {
+      fetchAttributionFor(stationCtx(selectedStation));
+    } else if (clickEstimate) {
+      fetchAttributionFor(pointCtx(clickEstimate));
     }
-  }, [selectedStation, clickEstimate, fetchAttributionFor]);
+  }, [selectedStation, clickEstimate, fetchAttributionFor, stationCtx, pointCtx]);
 
   const handleLayerChange = useCallback((key, val) =>
     setLayers(prev => ({ ...prev, [key]: val })), []);
 
   // ── Derived ───────────────────────────────────────────────────────
   const liveStations = stations.filter(s => s.aqi != null && s.aqi > 0);
-  const cAqi     = cityAqi(liveStations) ?? null;
-  const cleanest = liveStations.length ? [...liveStations].sort((a, b) => a.aqi - b.aqi)[0]   : null;
-  const worst    = liveStations.length ? [...liveStations].sort((a, b) => b.aqi - a.aqi)[0]   : null;
+  const cAqi = cityAqi(liveStations) ?? null;
+  const cleanest = liveStations.length ? [...liveStations].sort((a, b) => a.aqi - b.aqi)[0] : null;
+  const worst = liveStations.length ? [...liveStations].sort((a, b) => b.aqi - a.aqi)[0] : null;
 
   const selectedContext = selectedStation
     ? { name: selectedStation.name, lat: selectedStation.lat, lon: selectedStation.lon, aqi: selectedStation.aqi }
     : clickEstimate
-    ? { name: null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
-    : null;
+      ? { name: null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
+      : null;
 
   // When backend is down, hide heatmap (it would only show interpolated mock values)
   const effectiveLayers = backendDown

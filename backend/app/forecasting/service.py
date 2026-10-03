@@ -67,7 +67,6 @@ def run_forecast(
             except Exception:
                 pass  # Fall through to plain SARIMA
 
-        # Fall back to plain SARIMA
         if not sarimax_ok:
             try:
                 fit_plain = fit_sarima(series)
@@ -80,20 +79,18 @@ def run_forecast(
                 values = _naive_fallback(db, station_id, now, steps)
                 model_used = "seasonal_naive"
 
-        # If SARIMAX succeeded but uncertainty was requested, recompute with plain CI
-        # (SARIMAX CI extraction is identical API — we wrap it here)
         if sarimax_ok and uncertainty:
             try:
-                exog_train_u = align_exog_to_series(series, hist_wx, _WEATHER_COLS)  # type: ignore[possibly-undefined]
+                exog_train_u = align_exog_to_series(series, hist_wx, _WEATHER_COLS) 
                 fit_u = fit_sarimax(series, exog_train_u)
                 from statsmodels.tsa.statespace.sarimax import SARIMAXResultsWrapper
-                fc_obj = fit_u.get_forecast(steps=steps, exog=exog_future)  # type: ignore[possibly-undefined]
+                fc_obj = fit_u.get_forecast(steps=steps, exog=exog_future)  
                 ci = fc_obj.conf_int(alpha=0.05)
                 lower = [float(max(0.0, min(500.0, v))) for v in ci.iloc[:, 0]]
                 upper = [float(max(0.0, min(500.0, v))) for v in ci.iloc[:, 1]]
             except Exception:
-                lower = [None] * steps  # type: ignore[assignment]
-                upper = [None] * steps  # type: ignore[assignment]
+                lower = [None] * steps  
+                upper = [None] * steps  
     else:
         values = _naive_fallback(db, station_id, now, steps)
 

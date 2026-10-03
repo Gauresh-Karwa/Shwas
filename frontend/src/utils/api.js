@@ -8,6 +8,8 @@
  *  - VITE_API_BASE_URL controls the base URL (.env.local).
  */
 
+import { getCategory } from './aqi';
+
 const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 // ── Health check — used to detect if backend is reachable ──────────
@@ -29,14 +31,14 @@ export async function interpolate(lat, lon, signal) {
 
 function distance(lat1, lon1, lat2, lon2) {
   const R = 6371e3; // metres
-  const phi1 = lat1 * Math.PI/180;
-  const phi2 = lat2 * Math.PI/180;
-  const deltaPhi = (lat2-lat1) * Math.PI/180;
-  const deltaLambda = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(deltaPhi/2) * Math.sin(deltaPhi/2) +
-            Math.cos(phi1) * Math.cos(phi2) *
-            Math.sin(deltaLambda/2) * Math.sin(deltaLambda/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const phi1 = lat1 * Math.PI / 180;
+  const phi2 = lat2 * Math.PI / 180;
+  const deltaPhi = (lat2 - lat1) * Math.PI / 180;
+  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(deltaPhi / 2) * Math.sin(deltaPhi / 2) +
+    Math.cos(phi1) * Math.cos(phi2) *
+    Math.sin(deltaLambda / 2) * Math.sin(deltaLambda / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
 
@@ -54,7 +56,7 @@ function mergeStations(backendStations, configStations) {
     let ward = bs.ward;
     let agency = bs.agency;
     let name = bs.name;
-    
+
     // Attempt to match by id or name to get coordinates if missing
     if (!lat || !lon) {
       const config = configStations.find(c => c.id === bs.id || c.name === bs.name);
@@ -66,7 +68,7 @@ function mergeStations(backendStations, configStations) {
         name = config.name || name;
       }
     }
-    
+
     const bsNormName = normalizeName(name);
     let matchIdx = -1;
     for (let i = 0; i < merged.length; i++) {
@@ -74,21 +76,21 @@ function mergeStations(backendStations, configStations) {
       const msNormName = normalizeName(ms.name);
       const sameName = bsNormName && msNormName && bsNormName === msNormName;
       const near = (lat && lon && ms.lat && ms.lon) ? distance(lat, lon, ms.lat, ms.lon) <= 300 : false;
-      
+
       if (sameName || near) {
         matchIdx = i;
         break;
       }
     }
-    
+
     const stationEntry = {
       ...bs,
       name, lat, lon, ward, agency,
-      aqi:  bs.aqi  ?? null,
+      aqi: bs.aqi ?? null,
       pm25: bs.pm25 ?? null,
       pm10: bs.pm10 ?? null,
-      no2:  bs.no2  ?? null,
-      so2:  bs.so2  ?? null,
+      no2: bs.no2 ?? null,
+      so2: bs.so2 ?? null,
       updated_at: bs.updated_at ?? null,
     };
 
@@ -104,7 +106,7 @@ function mergeStations(backendStations, configStations) {
       merged.push(stationEntry);
     }
   }
-  
+
   return merged;
 }
 
@@ -114,7 +116,7 @@ export async function fetchLiveStations(seedStations, signal) {
   const res = await fetch(url, signal ? { signal } : {});
   if (!res.ok) throw new Error('Failed to fetch live stations');
   const data = await res.json();
-  
+
   const backendStations = data.map(s => ({
     id: s.station_id,
     name: s.name,
@@ -124,8 +126,8 @@ export async function fetchLiveStations(seedStations, signal) {
     updated_at: s.timestamp,
     pm25: s.pm25 ?? null,
     pm10: s.pm10 ?? null,
-    no2:  s.no2  ?? null,
-    so2:  s.so2  ?? null,
+    no2: s.no2 ?? null,
+    so2: s.so2 ?? null,
   }));
 
   if (backendStations.length === 0) {
@@ -153,19 +155,35 @@ export async function forecastCoordinate(lat, lon, steps = 24, uncertainty = fal
 }
 
 // ── /api/attribution ───────────────────────────────────────────────
-// Returns: { wind, fires, news, explanation }
+// Returns: { wind, fires: [{ lat, lon, distance_km, frp_mw }],
+//            news: [{ title, url, domain }], explanation }
 export async function getAttribution(lat, lon, stationName, aqi, category, dominantPollutant) {
   const params = new URLSearchParams({
-    lat:                lat.toFixed(6),
-    lon:                lon.toFixed(6),
-    station_name:       stationName,
-    aqi:                String(Math.round(aqi ?? 0)),
-    category:           category,
+    lat: lat.toFixed(6),
+    lon: lon.toFixed(6),
+    station_name: stationName,
+    aqi: String(Math.round(aqi ?? 0)),
+    category: category,
     dominant_pollutant: dominantPollutant,
   });
   const res = await fetch(`${BASE}/api/attribution?${params}`);
   if (!res.ok) throw new Error(`attribution HTTP ${res.status}`);
   return res.json();
+}
+
+// ctx: { lat, lon, aqi, name, dominantPollutant? }
+// Category is always derived from the AQI so text and header never disagree.
+// dominantPollutant falls back to 'PM2.5' (backend default) only when no
+// pollutant reading is available for the location.
+export async function getAttributionFor(ctx) {
+  const aqi = Math.round(ctx.aqi ?? 0);
+  return getAttribution(
+    ctx.lat, ctx.lon,
+    ctx.name ?? 'Unknown location',
+    aqi,
+    getCategory(aqi).label,
+    ctx.dominantPollutant ?? 'PM2.5',
+  );
 }
 
 // ── /api/wards ─────────────────────────────────────────────────────
