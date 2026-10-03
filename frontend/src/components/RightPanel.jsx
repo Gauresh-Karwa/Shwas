@@ -39,7 +39,10 @@ function WindArrowIcon({ deg }) {
 // ── Forecast line chart (SVG, self-written) ──────────────────────────
 function ForecastChart({ forecasts, currentOffset }) {
   if (!forecasts?.length) return null;
-
+  const isAllZero = forecasts.every(f => f.aqi === 0);
+  if (isAllZero) {
+    return <div style={{ padding: '20px 0', color: 'var(--sage)', fontSize: '0.85rem' }}>Insufficient historical data for forecast.</div>;
+  }
   const W = 290, H = 76;
   const n = forecasts.length;
 

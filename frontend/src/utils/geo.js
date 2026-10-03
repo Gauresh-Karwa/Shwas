@@ -92,9 +92,9 @@ export function mergeWardAqi(backendWards, sensorWardAqi) {
   for (const w of (backendWards ?? [])) {
     const sensor = sensorWardAqi?.[w.ward_id];
     if (sensor && sensor.count > 0) {
-      out[w.ward_id] = { aqi: sensor.aqi, count: sensor.count, estimated: false };
+      out[w.ward_id] = { aqi: sensor.aqi, count: sensor.count, estimated: false, name: w.ward_name };
     } else {
-      out[w.ward_id] = { aqi: Math.round(w.aqi), count: 0, estimated: true };
+      out[w.ward_id] = { aqi: Math.round(w.aqi), count: 0, estimated: true, name: w.ward_name };
     }
   }
   return out;

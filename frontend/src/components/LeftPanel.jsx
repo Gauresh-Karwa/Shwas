@@ -95,7 +95,7 @@ function CityAQICard({ aqi, loading }) {
   const cat = getCategory(aqi);
   return (
     <div className="city-card fade-up">
-      <div className="city-card__label">Mumbai city average</div>
+      <div className="city-card__label">Mumbai city average · population-weighted</div>
       <div className="city-card__body">
         <div className="city-card__number" style={{ color: cat.color }}>{aqi}</div>
         <div className="city-card__info">

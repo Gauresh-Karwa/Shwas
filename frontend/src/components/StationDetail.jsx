@@ -5,6 +5,10 @@ import './StationDetail.css';
 // currentOffset (0–23): slider position — draws a vertical marker in the chart.
 function ForecastChart({ forecasts, currentOffset }) {
   if (!forecasts?.length) return null;
+  const isAllZero = forecasts.every(f => f.aqi === 0);
+  if (isAllZero) {
+    return <div style={{ padding: '20px 0', color: 'var(--sage)', fontSize: '0.85rem' }}>Insufficient historical data for forecast.</div>;
+  }
 
   const W = 300, H = 80;
   const n = forecasts.length;

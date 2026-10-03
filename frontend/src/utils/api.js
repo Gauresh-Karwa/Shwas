@@ -9,6 +9,8 @@
  */
 
 import { getCategory } from './aqi';
+import { loadWardData } from '../data/wardData';
+import { ptInFeature } from './geo';
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
@@ -111,15 +113,54 @@ function mergeStations(backendStations, configStations) {
 }
 
 // ── fetchLiveStations ──────────────────────────────────────────────
-export async function fetchLiveStations(seedStations, signal) {
+// Backend sends: station_id, name ("Powai, Mumbai - MPCB"), lat, lon, aqi, timestamp, pollutants.
+// It does NOT send ward or agency, so we work them out from live data:
+//   agency → from the name suffix
+//   ward   → which ward polygon contains the station's lat/lon
+
+const AGENCY_RE = /\s*-\s*(MPCB|IITM|BMC|CPCB|SAFAR)\s*$/i;
+
+function agencyFromName(name) {
+  const m = (name ?? '').match(AGENCY_RE);
+  return m ? m[1].toUpperCase() : null;
+}
+
+function cleanStationName(name) {
+  return (name ?? '')
+    .replace(AGENCY_RE, '')          // drop " - MPCB"
+    .replace(/,\s*Mumbai\s*$/i, '')  // drop ", Mumbai"
+    .replace(/_/g, ', ')             // "Kherwadi_Bandra East" → "Kherwadi, Bandra East"
+    .trim();
+}
+
+// First argument is no longer used (seed list removed); kept so callers don't break.
+export async function fetchLiveStations(signal) {
   const url = `${BASE}/api/stations`;
   const res = await fetch(url, signal ? { signal } : {});
   if (!res.ok) throw new Error('Failed to fetch live stations');
   const data = await res.json();
 
+  if (data.length === 0) {
+    throw new Error('No live data available from any station');
+  }
+
+  // Ward polygons (real file). If it fails to load, ward just stays null.
+  let wardFeatures = [];
+  try {
+    wardFeatures = (await loadWardData()).geojson.features;
+  } catch { /* ward stays null */ }
+
+  const wardOf = (lat, lon) => {
+    if (lat == null || lon == null) return null;
+    const f = wardFeatures.find(feat => ptInFeature(lon, lat, feat)); // note: lon first
+    return f ? f.properties.wardCode : null;
+  };
+
   const backendStations = data.map(s => ({
     id: s.station_id,
-    name: s.name,
+    name: cleanStationName(s.name),
+    agency: agencyFromName(s.name),
+    ward: wardOf(s.lat, s.lon),
     lat: s.lat,
     lon: s.lon,
     aqi: s.aqi != null ? Math.round(s.aqi) : null,
@@ -130,20 +171,31 @@ export async function fetchLiveStations(seedStations, signal) {
     so2: s.so2 ?? null,
   }));
 
-  if (backendStations.length === 0) {
-    throw new Error('No live data available from any station');
-  }
-
-  return mergeStations(backendStations, seedStations);
+  return mergeStations(backendStations, []);
 }
 
 // ── /api/forecast/{station_id} ─────────────────────────────────────
-// Returns: { station_id, forecasts: [{timestamp, aqi, aqi_lower?, aqi_upper?}] }
+// Returns: { station_id, forecast: [{timestamp, aqi, aqi_lower?, aqi_upper?}] }
+
+// Round numbers (100.3 → 100) and never go below 0
+function cleanForecast(points) {
+  if (!Array.isArray(points)) return null;
+  const r = v => (v == null ? null : Math.max(0, Math.round(v)));
+  return points.map(p => ({
+    ...p,
+    aqi: r(p.aqi),
+    aqi_lower: r(p.aqi_lower),
+    aqi_upper: r(p.aqi_upper),
+  }));
+}
+
 export async function forecastStation(stationId, steps = 24, uncertainty = false) {
   const url = `${BASE}/api/forecast/${encodeURIComponent(stationId)}?steps=${steps}&uncertainty=${uncertainty}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`forecast HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  const raw = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
+  return { ...data, forecast: cleanForecast(raw) };
 }
 
 // ── /api/forecast/coordinate ───────────────────────────────────────
@@ -211,5 +263,14 @@ export async function fetchSensorSites(topK = 5, signal) {
   const url = `${BASE}/api/recommendations/sensor-placement?top_k=${topK}`;
   const res = await fetch(url, signal ? { signal } : {});
   if (!res.ok) throw new Error(`sensor-placement HTTP ${res.status}`);
+  return res.json();
+}
+
+// ── /api/attribution/{station_id}/apportionment ────────────────────
+// Returns: { source_type, fine_fraction, interpretation, data_available, ... }
+export async function fetchApportionment(stationId, signal) {
+  const url = `${BASE}/api/attribution/${encodeURIComponent(stationId)}/apportionment`;
+  const res = await fetch(url, signal ? { signal } : {});
+  if (!res.ok) throw new Error(`apportionment HTTP ${res.status}`);
   return res.json();
 }

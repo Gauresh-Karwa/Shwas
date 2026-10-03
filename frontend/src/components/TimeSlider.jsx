@@ -60,7 +60,7 @@ export default function TimeSlider({ offset, onChange, hasForecasts }) {
 
       {/* Hour ticks */}
       <div className="ts-ticks" aria-hidden="true">
-        {[0, 6, 12, 18, 23].map(h => (
+        {[6, 12, 18].map(h => (
           <span key={h} className={`ts-tick${h === offset ? ' ts-tick--active' : ''}`}
             style={{ left: `${(h / 23 * 100).toFixed(1)}%` }}>
             {h === 0 ? '' : `+${h}h`}

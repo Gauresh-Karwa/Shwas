@@ -10,7 +10,7 @@ import { computeWardAqi, mergeWardAqi } from '../utils/geo';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const REFRESH_MS = 5 * 60 * 1000;
 
-export function useLiveData(seedStations) {
+export function useLiveData() {
   const [stations, setStations] = useState([]);
   const [wardAqi, setWardAqi] = useState({});
   const [wardExposure, setWardExposure] = useState(null);   // /api/wards summary
@@ -25,7 +25,7 @@ export function useLiveData(seedStations) {
   const [attribution, setAttribution] = useState(null);
   const [attributionLoading, setAttributionLoading] = useState(false);
   const [attributionError, setAttributionError] = useState(false);
-
+  const [forecastLoadingId, setForecastLoadingId] = useState(null);
   const fetchLiveData = useCallback(async (isInitial = false) => {
     if (USE_MOCK) {
       if (isInitial) {
@@ -49,7 +49,7 @@ export function useLiveData(seedStations) {
       // First verify backend is up and get the response timestamp
       const { timestamp } = await checkHealth();
 
-      const live = await fetchLiveStations(seedStations);
+      const live = await fetchLiveStations();
       const valid = live.filter(s => s.aqi != null);
 
       if (valid.length > 0) {
@@ -92,7 +92,7 @@ export function useLiveData(seedStations) {
         const fResults = {};
         const [, hotspotsRes, sensorsRes] = await Promise.allSettled([
           Promise.allSettled(
-            seedStations.map(async s => {
+            valid.map(async s => {
               try {
                 const data = await forecastStation(s.id, 24, false);
                 fResults[s.id] = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
@@ -102,7 +102,7 @@ export function useLiveData(seedStations) {
           fetchHotspots(100, 1.0),
           fetchSensorSites(5),
         ]);
-        setAllForecasts(fResults);
+        setAllForecasts(prev => ({ ...fResults, ...prev }));
         if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value ?? []);
         if (sensorsRes.status === 'fulfilled') setSensorSites(sensorsRes.value ?? []);
       }
@@ -113,7 +113,7 @@ export function useLiveData(seedStations) {
     } finally {
       if (isInitial) setLoading(false);
     }
-  }, [seedStations]);
+  }, []);
 
   useEffect(() => {
     fetchLiveData(true);
@@ -145,17 +145,20 @@ export function useLiveData(seedStations) {
   // Lazy-load forecast for a station when it's selected and not yet cached
   const fetchForecastFor = useCallback(async (stationId) => {
     if (!stationId) return;
-    setAllForecasts(prev => {
-      if (prev[stationId]) return prev; // already cached
-      return prev; // no change yet; fetch below
-    });
-    // Check cache via ref pattern — just try to fetch; skip if already set
+    setForecastLoadingId(stationId);
     try {
-      const data = await forecastStation(stationId, 24, false);
+      let data;
+      try {
+        data = await forecastStation(stationId, 24, true);   // with confidence band
+      } catch {
+          data = await forecastStation(stationId, 24, false);  // plain forecast if the band fails
+      }
       const fc = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
       if (fc) setAllForecasts(prev => ({ ...prev, [stationId]: fc }));
     } catch {
-      // Station may have no model — chart stays hidden
+    // station has no forecast, so the chart stays hidden
+    } finally {
+      setForecastLoadingId(prev => (prev === stationId ? null : prev));
     }
   }, []);
 
@@ -169,6 +172,7 @@ export function useLiveData(seedStations) {
     lastUpdated,
     backendDown,
     loading,
+    forecastLoadingId,
     retry,
     attribution,
     attributionLoading,
