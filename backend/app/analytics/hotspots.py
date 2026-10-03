@@ -1,38 +1,21 @@
-"""
-Confidence-gated hotspot detection: ranks land-masked grid points by a
-lower confidence bound (LCB) on AQI, not the raw point estimate, so a
-high AQI number that's really just MC-dropout noise doesn't get flagged
-alongside a reading the model is actually confident about.
-
-    LCB(p) = mean_aqi(p) - z * std(p)
-
-IMPORTANT CALIBRATION CAVEAT, stated plainly rather than implied away:
-treating z=1.96 as "the 95% bound" assumes the GNN's MC-dropout std is a
-calibrated Gaussian uncertainty. That has NOT been confirmed against real
-data — scripts/evaluate_uncertainty_calibration.py exists specifically to
-check this empirical coverage, and it has not yet been run against this
-project's live Postgres data as of this code being written. Until that
-script reports a real coverage number close to 95%, treat "lcb" as a
-confidence-ADJUSTED estimate, not a statistically verified bound — the
-field is named accordingly (lcb, not confirmed_floor or similar) and
-callers should surface it the same way.
-
-Points that fell back to IDW (no std available) are still reported, but
-flagged method="idw" with lcb == aqi (no correction applied, since there
-is no uncertainty estimate to subtract) rather than silently dropped —
-an IDW-only hotspot is still worth knowing about, just without the same
-confidence framing as a GNN-confirmed one.
-"""
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
+import numpy as np
+from sklearn.cluster import DBSCAN
 from sqlalchemy.orm import Session
 
 from app.aqi.calculator import CATEGORY_BANDS
 from app.analytics.grid_scan import DEFAULT_MC_SAMPLES, scan_grid
 
 DEFAULT_Z = 1.96
+
+# Neighbouring grid cells are 2 km apart (2.83 km on the diagonal), so a
+# 3 km radius joins adjacent hot cells into one hotspot.
+CLUSTER_RADIUS_KM = 3.0
+EARTH_RADIUS_KM = 6371.0
 
 
 def _category_for(aqi: float) -> str:
@@ -54,6 +37,38 @@ class HotspotCandidate:
     lcb: float
     lcb_category: str
     method: str  # "gnn" (lcb is confidence-adjusted) or "idw" (lcb == aqi)
+    cluster_size: int = 1  # grid cells merged into this hotspot
+
+
+def cluster_hotspots(
+    candidates: list[HotspotCandidate],
+    radius_km: float = CLUSTER_RADIUS_KM,
+) -> list[HotspotCandidate]:
+    """Group neighbouring hot grid cells with DBSCAN (haversine metric) and
+    keep the worst-LCB cell of each group as its representative.
+
+    min_samples=1 on purpose: an isolated hot cell is still a hotspot, not
+    noise, so nothing is discarded - adjacent cells are just merged so one
+    polluted area is reported once, with `cluster_size` cells.
+    radius_km <= 0 turns clustering off."""
+    if radius_km <= 0 or len(candidates) < 2:
+        return candidates
+
+    coords = np.radians([[c.lat, c.lon] for c in candidates])
+    labels = DBSCAN(
+        eps=radius_km / EARTH_RADIUS_KM, min_samples=1, metric="haversine"
+    ).fit_predict(coords)
+
+    sizes = Counter(labels)
+    best: dict[int, HotspotCandidate] = {}
+    for cand, label in zip(candidates, labels):
+        if label not in best or cand.lcb > best[label].lcb:
+            best[label] = cand
+    merged = []
+    for label, cand in best.items():
+        cand.cluster_size = sizes[label]
+        merged.append(cand)
+    return merged
 
 
 def detect_hotspots(
@@ -62,6 +77,7 @@ def detect_hotspots(
     z: float = DEFAULT_Z,
     step_km: float = 2.0,
     mc_samples: int = DEFAULT_MC_SAMPLES,
+    cluster_radius_km: float = CLUSTER_RADIUS_KM,
 ) -> list[HotspotCandidate]:
     grid = scan_grid(db, step_km=step_km, mc_samples=mc_samples)
 
@@ -90,5 +106,6 @@ def detect_hotspots(
             )
         )
 
+    candidates = cluster_hotspots(candidates, cluster_radius_km)
     candidates.sort(key=lambda c: c.lcb, reverse=True)
     return candidates

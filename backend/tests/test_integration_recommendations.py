@@ -12,6 +12,7 @@ from app.analytics import grid_scan
 from app.db import Base, get_db
 from app.main import app
 from app.models.db_models import Station, StationAQI, WardBoundary, WardPopulation
+from app.analytics.sensor_placement import EXCLUSION_RADIUS_KM
 
 BIG_WARD = {
     "type": "Polygon",
@@ -73,7 +74,8 @@ class TestSensorPlacementEndpoint:
         body = r.json()
         assert isinstance(body, list)
         for site in body:
-            assert site["nearest_station_distance_km"] == -1.0 or site["nearest_station_distance_km"] >= 2.5
+            assert site["nearest_station_distance_km"] == -1.0 or site["nearest_station_distance_km"] >= EXCLUSION_RADIUS_KM
+            assert site["reason"] in ("unmonitored_ward", "coverage_gap")
             assert 0.0 <= site["estimated_aqi"] <= 500.0
             assert site["uncertainty_std"] >= 0.0
 

@@ -4,8 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.analytics.hotspots import DEFAULT_Z, detect_hotspots
-from app.analytics.sensor_placement import EXCLUSION_RADIUS_KM, recommend_sensor_sites
+from app.analytics.hotspots import CLUSTER_RADIUS_KM, DEFAULT_Z, detect_hotspots
+from app.analytics.sensor_placement import (
+    EXCLUSION_RADIUS_KM,
+    MIN_SEPARATION_KM,
+    recommend_sensor_sites,
+)
 from app.db import get_db
 
 router = APIRouter(prefix="/api", tags=["recommendations"])
@@ -21,6 +25,7 @@ class SensorSiteResponse(BaseModel):
     uncertainty_std: float
     nearest_station_distance_km: float
     score: float
+    reason: str  # "unmonitored_ward" | "coverage_gap"
 
 
 class HotspotResponse(BaseModel):
@@ -34,16 +39,23 @@ class HotspotResponse(BaseModel):
     lcb: float
     lcb_category: str
     method: str
+    cluster_size: int = 1
 
 
 @router.get("/recommendations/sensor-placement", response_model=list[SensorSiteResponse])
 def sensor_placement(
     top_k: int = Query(5, ge=1, le=50),
     exclusion_radius_km: float = Query(EXCLUSION_RADIUS_KM, ge=0),
+    min_separation_km: float = Query(MIN_SEPARATION_KM, ge=0),
     db: Session = Depends(get_db),
 ):
     try:
-        sites = recommend_sensor_sites(db, top_k=top_k, exclusion_radius_km=exclusion_radius_km)
+        sites = recommend_sensor_sites(
+            db,
+            top_k=top_k,
+            exclusion_radius_km=exclusion_radius_km,
+            min_separation_km=min_separation_km,
+        )
     except LookupError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     return [SensorSiteResponse(**vars(s)) for s in sites]
@@ -53,10 +65,11 @@ def sensor_placement(
 def hotspots(
     threshold: float = Query(100.0, ge=0, le=500),
     z: float = Query(DEFAULT_Z, ge=0),
+    cluster_radius_km: float = Query(CLUSTER_RADIUS_KM, ge=0),
     db: Session = Depends(get_db),
 ):
     try:
-        found = detect_hotspots(db, threshold=threshold, z=z)
+        found = detect_hotspots(db, threshold=threshold, z=z, cluster_radius_km=cluster_radius_km)
     except LookupError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     return [HotspotResponse(**vars(h)) for h in found]

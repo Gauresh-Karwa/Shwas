@@ -1,5 +1,5 @@
 import React from 'react';
-import { getCategory, getAQIColor } from '../utils/aqi';
+import { getCategory } from '../utils/aqi';
 import './StationDetail.css';
 
 // currentOffset (0–23): slider position — draws a vertical marker in the chart.
@@ -17,19 +17,19 @@ function ForecastChart({ forecasts, currentOffset }) {
   const uppers = forecasts.map(f => f.aqi_upper ?? f.aqi);
   const center = forecasts.map(f => f.aqi);
 
-  const minV  = Math.min(...lowers) * 0.92;
-  const maxV  = Math.max(...uppers) * 1.06;
+  const minV = Math.min(...lowers) * 0.92;
+  const maxV = Math.max(...uppers) * 1.06;
   const range = Math.max(maxV - minV, 1);
 
-  const px = i  => +((i / (n - 1)) * W).toFixed(2);
-  const py = v  => +((H - ((v - minV) / range) * H)).toFixed(2);
+  const px = i => +((i / (n - 1)) * W).toFixed(2);
+  const py = v => +((H - ((v - minV) / range) * H)).toFixed(2);
 
   const peakAqi = Math.max(...center);
-  const lowAqi  = Math.min(...center);
+  const lowAqi = Math.min(...center);
 
   // Band (upper → lower reversed)
-  const bandUp  = forecasts.map((f, i) => `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi_upper ?? f.aqi)}`).join('');
-  const bandDn  = [...forecasts].reverse().map((f, i) => `L${px(n - 1 - i)},${py(f.aqi_lower ?? f.aqi)}`).join('');
+  const bandUp = forecasts.map((f, i) => `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi_upper ?? f.aqi)}`).join('');
+  const bandDn = [...forecasts].reverse().map((f, i) => `L${px(n - 1 - i)},${py(f.aqi_lower ?? f.aqi)}`).join('');
 
   // Center line
   const line = forecasts.map((f, i) => `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi)}`).join('');
@@ -134,8 +134,8 @@ function AttributionCard({ data, loading }) {
 
   // Build factor tags from structured data
   const factors = [];
-  if (fires?.length)              factors.push('Fire smoke');
-  if (wind?.speed_mps != null)    factors.push(`${wind.compass ?? 'Wind'} wind`);
+  if (fires?.length) factors.push('Fire smoke');
+  if (wind?.speed_mps != null) factors.push(`${wind.compass ?? 'Wind'} wind`);
   factors.push('Traffic');
 
   // Build data pills
@@ -194,9 +194,9 @@ export function StationDetailCard({ station, forecast, forecastLoading, attribut
       <div className="sdc__pollutants" aria-label="Pollutant concentrations">
         {[
           { key: 'pm25', label: 'PM2.5' },
-          { key: 'pm10', label: 'PM10'  },
-          { key: 'no2',  label: 'NO₂'   },
-          { key: 'so2',  label: 'SO₂'   },
+          { key: 'pm10', label: 'PM10' },
+          { key: 'no2', label: 'NO₂' },
+          { key: 'so2', label: 'SO₂' },
         ].map(({ key, label }) => (
           <div key={key} className="sdc__poll-cell">
             <div className="sdc__poll-val">{station[key] ?? '—'}</div>

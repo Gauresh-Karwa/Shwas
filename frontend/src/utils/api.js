@@ -258,8 +258,9 @@ export async function fetchHotspots(threshold = 100, z = 1.0, signal) {
 
 // ── /api/recommendations/sensor-placement ─────────────────────────
 // Returns: [{ lat, lon, ward_id, ward_name, population,
-//             estimated_aqi, uncertainty_std, nearest_station_distance_km, score }]
-export async function fetchSensorSites(topK = 5, signal) {
+//             estimated_aqi, uncertainty_std, nearest_station_distance_km, score,
+//             reason: 'unmonitored_ward' | 'coverage_gap' }]
+export async function fetchSensorSites(topK = 12, signal) {
   const url = `${BASE}/api/recommendations/sensor-placement?top_k=${topK}`;
   const res = await fetch(url, signal ? { signal } : {});
   if (!res.ok) throw new Error(`sensor-placement HTTP ${res.status}`);

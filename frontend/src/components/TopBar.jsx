@@ -9,15 +9,6 @@ export default function TopBar({ lastUpdated }) {
     return () => clearInterval(id);
   }, []);
 
-  const fmtTime = d =>
-    d.toLocaleTimeString('en-IN', {
-      weekday:  'short',
-      hour:     '2-digit',
-      minute:   '2-digit',
-      hour12:   true,
-      timeZone: 'Asia/Kolkata',
-    });
-
   const fmtUpdated = iso => {
     if (!iso) return null;
     const t = new Date(iso).toLocaleTimeString('en-IN', {

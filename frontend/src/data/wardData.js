@@ -48,12 +48,12 @@ function computeBounds(fc) {
 function flattenCoords(geom) {
   if (!geom) return [];
   const type = geom.type;
-  if (type === 'Point')            return [geom.coordinates];
-  if (type === 'MultiPoint')       return geom.coordinates;
-  if (type === 'LineString')       return geom.coordinates;
-  if (type === 'MultiLineString')  return geom.coordinates.flat();
-  if (type === 'Polygon')          return geom.coordinates.flat();
-  if (type === 'MultiPolygon')     return geom.coordinates.flat(2);
+  if (type === 'Point') return [geom.coordinates];
+  if (type === 'MultiPoint') return geom.coordinates;
+  if (type === 'LineString') return geom.coordinates;
+  if (type === 'MultiLineString') return geom.coordinates.flat();
+  if (type === 'Polygon') return geom.coordinates.flat();
+  if (type === 'MultiPolygon') return geom.coordinates.flat(2);
   if (type === 'GeometryCollection') return geom.geometries.flatMap(flattenCoords);
   return [];
 }
@@ -84,15 +84,14 @@ export function loadWardData() {
     }
 
     // 4 – Annotate each ward feature with population + normalised code
-    const wardNames = new Set(csvRows.map(r => normaliseWard(r.Ward_Alphabet)));
     const unmatched = [];
 
     const annotated = {
       ...geojson,
       features: geojson.features.map(f => {
         const rawCode = f.properties.name;
-        const code    = normaliseWard(rawCode);
-        const pop     = popByWard[code] ?? null;
+        const code = normaliseWard(rawCode);
+        const pop = popByWard[code] ?? null;
         if (pop === null) unmatched.push(rawCode);
         return {
           ...f,
@@ -101,7 +100,7 @@ export function loadWardData() {
             ...f.properties,
             wardCode: code,
             population: pop,
-            wardName:   rawCode,
+            wardName: rawCode,
           },
         };
       }),

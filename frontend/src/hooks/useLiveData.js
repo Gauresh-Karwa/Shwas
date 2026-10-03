@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   fetchLiveStations, forecastStation, getAttributionFor, checkHealth,
   fetchWardExposure, fetchHotspots, fetchSensorSites,
@@ -14,7 +14,7 @@ export function useLiveData() {
   const [stations, setStations] = useState([]);
   const [wardAqi, setWardAqi] = useState({});
   const [wardExposure, setWardExposure] = useState(null);   // /api/wards summary
-  const [hotspots, setHotspots] = useState([]);              // /api/analytics/hotspots
+  const [hotspots, setHotspots] = useState(null);            // /api/analytics/hotspots (null = not loaded yet)
   const [sensorSites, setSensorSites] = useState([]);        // /api/recommendations/sensor-placement
   const [allForecasts, setAllForecasts] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -64,7 +64,7 @@ export function useLiveData() {
           // the backend GNN/IDW estimate.
           const { geojson } = await loadWardData();
           setWardAqi(mergeWardAqi(wardData.wards, computeWardAqi(geojson, valid)));
-        } catch (_) {
+        } catch {
           // Fallback to client-side centroid calculation if backend unreachable
           try {
             const { geojson } = await loadWardData();
@@ -87,10 +87,16 @@ export function useLiveData() {
 
       setBackendDown(false);
 
-      // Pre-fetch forecasts, hotspots, sensor sites (initial only)
+      // Hotspots depend on live readings, so they refresh every cycle
+      // (the backend caches the grid scan for 30 min). Keep the last list on failure.
+      fetchHotspots(100, 1.0)
+        .then(h => setHotspots(h ?? []))
+        .catch(() => { });
+
+      // Pre-fetch forecasts and sensor sites (initial only)
       if (isInitial) {
         const fResults = {};
-        const [, hotspotsRes, sensorsRes] = await Promise.allSettled([
+        const [, sensorsRes] = await Promise.allSettled([
           Promise.allSettled(
             valid.map(async s => {
               try {
@@ -99,14 +105,12 @@ export function useLiveData() {
               } catch { /* Ignore */ }
             })
           ),
-          fetchHotspots(100, 1.0),
-          fetchSensorSites(5),
+          fetchSensorSites(12),
         ]);
         setAllForecasts(prev => ({ ...fResults, ...prev }));
-        if (hotspotsRes.status === 'fulfilled') setHotspots(hotspotsRes.value ?? []);
         if (sensorsRes.status === 'fulfilled') setSensorSites(sensorsRes.value ?? []);
       }
-    } catch (e) {
+    } catch {
       setBackendDown(true);
       // Keep last good real data, but set lastUpdated to null to trigger "No live data"
       setLastUpdated(null);
@@ -151,12 +155,12 @@ export function useLiveData() {
       try {
         data = await forecastStation(stationId, 24, true);   // with confidence band
       } catch {
-          data = await forecastStation(stationId, 24, false);  // plain forecast if the band fails
+        data = await forecastStation(stationId, 24, false);  // plain forecast if the band fails
       }
       const fc = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
       if (fc) setAllForecasts(prev => ({ ...prev, [stationId]: fc }));
     } catch {
-    // station has no forecast, so the chart stays hidden
+      // station has no forecast, so the chart stays hidden
     } finally {
       setForecastLoadingId(prev => (prev === stationId ? null : prev));
     }

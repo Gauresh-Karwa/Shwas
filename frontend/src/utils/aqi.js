@@ -49,3 +49,11 @@ export function dominantPollutant(readings) {
   }
   return best;
 }
+export function describeHotspot(h) {
+  const aqi = Math.round(h.estimated_aqi ?? h.lcb ?? 0);
+  const parts = [`${h.ward_name ?? 'Hotspot'}: AQI ${aqi}`];
+  if (h.method === 'idw') parts.push('interpolated, no uncertainty estimate');
+  else if (h.lcb != null) parts.push(`confidence-adjusted floor ${Math.round(h.lcb)}`);
+  if (h.cluster_size > 1) parts.push(`${h.cluster_size} adjacent grid cells`);
+  return { aqi, category: getCategory(aqi).label, title: parts.join(' · ') };
+}

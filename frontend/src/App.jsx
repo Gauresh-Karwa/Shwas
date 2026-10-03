@@ -8,7 +8,7 @@
  *  - Attribution: /api/attribution. Error state shown; never mock text.
  *  - All API keys live in the backend; frontend has none.
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import './index.css';
 import './App.css';
 import './components/ShwasMap.css';
@@ -52,6 +52,23 @@ async function placeNameAt(lat, lon, wardExposure) {
     return null;
   }
 }
+// Align exposure with the ward AQI shown on the map: wards holding live
+// stations use the measured value, the rest keep the backend estimate.
+function reconcileExposure(wardExposure, wardAqi) {
+  if (!wardExposure?.wards?.length || !wardAqi) return wardExposure;
+  const byCategory = {};
+  let total = 0;
+  const wards = wardExposure.wards.map(w => {
+    const aqi = wardAqi[w.ward_id]?.aqi ?? w.aqi;
+    const pop = w.population ?? 0;
+    const category = getCategory(aqi).label;
+    byCategory[category] = (byCategory[category] ?? 0) + pop;
+    total += pop;
+    return { ...w, aqi, category };
+  });
+  return { ...wardExposure, wards, population_by_category: byCategory, total_population: total };
+}
+
 // Average AQI weighted by ward population (same basis as the exposure bar)
 function populationWeightedAqi(wardExposure) {
   let num = 0, den = 0;
@@ -63,7 +80,7 @@ function populationWeightedAqi(wardExposure) {
 export default function App() {
   const {
     stations,
-    wardAqi, // For future use
+    wardAqi,
     wardExposure,
     hotspots,
     sensorSites,
@@ -120,12 +137,12 @@ export default function App() {
   }, [fetchAttributionFor, fetchForecastFor, stationCtx]);
 
   const handleClickEstimate = useCallback(async (result) => {
-  const place = await placeNameAt(result.lat, result.lon, wardExposure);
-  const withPlace = { ...result, place };
-  setClickEstimate(withPlace);
-  setSelectedStation(null);
-  setHintVisible(false);
-  fetchAttributionFor(pointCtx(withPlace));
+    const place = await placeNameAt(result.lat, result.lon, wardExposure);
+    const withPlace = { ...result, place };
+    setClickEstimate(withPlace);
+    setSelectedStation(null);
+    setHintVisible(false);
+    fetchAttributionFor(pointCtx(withPlace));
   }, [fetchAttributionFor, pointCtx, wardExposure]);
 
   const handleCloseEstimate = useCallback(() => {
@@ -145,7 +162,8 @@ export default function App() {
 
   // ── Derived ───────────────────────────────────────────────────────
   const liveStations = stations.filter(s => s.aqi != null && s.aqi > 0);
-  const cAqi = populationWeightedAqi(wardExposure) ?? cityAqi(liveStations);
+  const exposure = useMemo(() => reconcileExposure(wardExposure, wardAqi), [wardExposure, wardAqi]);
+  const cAqi = populationWeightedAqi(exposure) ?? cityAqi(liveStations);
   const cleanest = liveStations.length ? [...liveStations].sort((a, b) => a.aqi - b.aqi)[0] : null;
   const worst = liveStations.length ? [...liveStations].sort((a, b) => b.aqi - a.aqi)[0] : null;
 
@@ -185,7 +203,7 @@ export default function App() {
           cityAqi={cAqi}
           cleanest={cleanest}
           worst={worst}
-          wardExposure={wardExposure}
+          wardExposure={exposure}
           stations={liveStations}
           selectedStation={selectedStation}
           onSelectStation={handleSelectStation}

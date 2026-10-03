@@ -70,3 +70,43 @@ def test_custom_z_changes_lcb(monkeypatch):
     results_strict = detect_hotspots(MagicMock(), threshold=0.0, z=1.96)
     results_loose = detect_hotspots(MagicMock(), threshold=0.0, z=0.5)
     assert results_loose[0].lcb > results_strict[0].lcb
+
+
+# ── DBSCAN clustering of neighbouring hot cells ──────────────────────────
+
+def _hot(lat, lon, ward, aqi, std=2.0):
+    return GridPoint(lat=lat, lon=lon, ward_id=ward, ward_name=ward, population=1000, aqi=aqi, std=std, method="gnn")
+
+
+def test_adjacent_hot_cells_merge_into_one_hotspot_with_worst_lcb(monkeypatch):
+    # 0.018 deg ~ 2 km apart (grid step) -> one hotspot; 'mid' is the worst cell.
+    grid = [_hot(19.000, 72.80, "a", 150.0), _hot(19.018, 72.80, "mid", 200.0), _hot(19.036, 72.80, "c", 160.0)]
+    import app.analytics.hotspots as hs
+    monkeypatch.setattr(hs, "scan_grid", lambda db, **k: grid)
+    results = detect_hotspots(MagicMock(), threshold=100.0)
+    assert len(results) == 1
+    assert results[0].ward_id == "mid"
+    assert results[0].cluster_size == 3
+
+
+def test_diagonal_neighbour_on_the_grid_still_joins(monkeypatch):
+    # diagonal of a 2 km grid is ~2.83 km, inside the default 3 km radius
+    grid = [_hot(19.000, 72.800, "a", 150.0), _hot(19.018, 72.819, "b", 155.0)]
+    import app.analytics.hotspots as hs
+    monkeypatch.setattr(hs, "scan_grid", lambda db, **k: grid)
+    assert len(detect_hotspots(MagicMock(), threshold=100.0)) == 1
+
+
+def test_distant_hot_areas_stay_separate_hotspots(monkeypatch):
+    grid = [_hot(19.00, 72.80, "a", 150.0), _hot(19.20, 72.90, "b", 150.0)]
+    import app.analytics.hotspots as hs
+    monkeypatch.setattr(hs, "scan_grid", lambda db, **k: grid)
+    results = detect_hotspots(MagicMock(), threshold=100.0)
+    assert len(results) == 2 and all(r.cluster_size == 1 for r in results)
+
+
+def test_cluster_radius_zero_disables_clustering(monkeypatch):
+    grid = [_hot(19.000, 72.80, "a", 150.0), _hot(19.018, 72.80, "b", 155.0)]
+    import app.analytics.hotspots as hs
+    monkeypatch.setattr(hs, "scan_grid", lambda db, **k: grid)
+    assert len(detect_hotspots(MagicMock(), threshold=100.0, cluster_radius_km=0)) == 2

@@ -20,7 +20,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { loadWardData } from '../data/wardData';
 import { computeWardAqi } from '../utils/geo';
-import { getAQIColor, getCategory } from '../utils/aqi';
+import { getAQIColor, getCategory, describeHotspot } from '../utils/aqi';
 import { interpolate as apiInterpolate } from '../utils/api';
 import './ShwasMap.css';
 
@@ -30,9 +30,6 @@ const GEO = { W: 72.75, E: 73.02, S: 18.88, N: 19.30 };
 // ── Heatmap grid ──────────────────────────────────────────────────
 // Smooth surface: ~400x520 canvas, clipped to ward polygons, blurred
 const SMOOTH_COLS = 400, SMOOTH_ROWS = 520;
-const dLng = (GEO.E - GEO.W) / SMOOTH_COLS;
-const dLat = (GEO.N - GEO.S) / SMOOTH_ROWS;
-const CONCURRENCY = 12;
 
 // MapLibre canvas-source corner coordinates (clockwise from top-left)
 const HEAT_COORDS = [
@@ -107,7 +104,8 @@ function traceWardPath(ctx, wardsGeoJSON, bounds) {
     ring.forEach(([lng, lat], i) => {
       const x = (lng - w) * scaleX;
       const y = (n - lat) * scaleY; // flip Y
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     });
     ctx.closePath();
   };
@@ -200,25 +198,6 @@ function idwValue(lat, lng, stations) {
   return den > 0 ? num / den : null;
 }
 
-// ── Canvas helpers ────────────────────────────────────────────────
-function drawCell(ctx, col, row, aqi) {
-  ctx.fillStyle = getAQIColor(aqi);
-  // Row 0 = southernmost lat → canvas bottom = ROWS-1-0 = ROWS-1
-  ctx.fillRect(col, ROWS - 1 - row, 1, 1);
-}
-
-// ── Concurrent batch runner ───────────────────────────────────────
-async function runConcurrent(tasks, limit, onEach) {
-  const queue = [...tasks];
-  async function worker() {
-    while (queue.length) {
-      const task = queue.shift();
-      await onEach(task);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
-}
-
 // ── Ward AQI now computed in useLiveData ──────────────────────────
 
 const fmtPop = n => (n == null ? 'N/A' : Number(n).toLocaleString('en-IN'));
@@ -255,7 +234,6 @@ export default function ShwasMap({
   const mapRef = useRef(null);
   const heatCanvasRef = useRef(null);   // offscreen canvas element
   const heatCtxRef = useRef(null);   // canvas 2d context
-  const landCellsRef = useRef([]);     // land-only grid cells (computed once)
   const rafRef = useRef(null);   // pending requestAnimationFrame id
   const pinMarkerRef = useRef(null);   // click-estimate marker
   const popupRef = useRef(null);
@@ -284,7 +262,6 @@ export default function ShwasMap({
   useEffect(() => { onClickEstimateRef.current = onClickEstimate; }, [onClickEstimate]);
 
   const [unmatched, setUnmatched] = useState([]);
-  const [heatLoading, setHeatLoading] = useState(false);
 
   // ── Initialise map once ──────────────────────────────────────
   useEffect(() => {
@@ -483,7 +460,7 @@ export default function ShwasMap({
     map.triggerRepaint();
     diagnoseHeatmap(map);
     applyLiveWardNames(geojson, wardAqiRef.current);
-    
+
     // 5 – Ward source + layers ───────────────────────────────
     map.addSource('wards', {
       type: 'geojson', data: geojson, promoteId: 'wardCode',
@@ -674,12 +651,6 @@ export default function ShwasMap({
       const wName = wardData.ward_name ?? feat.properties.wardName ?? id ?? '';
       const wLabel = wName !== id ? `${wName} (${id})` : wName;
 
-      // Position tooltip offset from cursor, keep inside map edges
-      const canvas = map.getCanvas();
-      const rect = canvas.getBoundingClientRect();
-      const x = e.point.x, y = e.point.y;
-      const offsetX = 16, offsetY = 16;
-
       // Clear any pending remove to prevent flicker
       if (hoverTimeout) { clearTimeout(hoverTimeout); hoverTimeout = null; }
 
@@ -773,7 +744,7 @@ export default function ShwasMap({
           apiCacheRef.current.set(cacheKey, data);
         }
         onClickEstimateRef.current?.({ ...data, lat, lon: lng });
-      } catch (err) {
+      } catch {
         // Fallback: IDW from current station data
         const pts = stationPointsRef.current ?? [];
         const v = idwValue(lat, lng, pts);
@@ -805,7 +776,7 @@ export default function ShwasMap({
   }
 
   /** Return stations with AQI values at the given forecast offset (0 = live). */
-    function getStationsAtOffset(stations, fcMap, offset) {
+  function getStationsAtOffset(stations, fcMap, offset) {
     if (!offset || !fcMap) return stations;
     return stations.map(s => {
       const fc = fcMap[s.id];
@@ -896,7 +867,7 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-    
+
     if (applyLiveWardNames(wardGeoRef.current, wardAqi)) {
       map.getSource('wards')?.setData(wardGeoRef.current);
     }
@@ -973,7 +944,7 @@ export default function ShwasMap({
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-    }, [forecastOffset, allForecasts, stationPoints]); // eslint-disable-line react-hooks/exhaustive-deps // eslint-disable-line react-hooks/exhaustive-deps
+  }, [forecastOffset, allForecasts, stationPoints]); // eslint-disable-line react-hooks/exhaustive-deps // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Wind arrow marker ────────────────────────────────────────
   useEffect(() => {
@@ -1015,16 +986,17 @@ export default function ShwasMap({
     hotspotMarkersRef.current = [];
     if (!map || !styleReadyRef.current || !hotspots?.length || !layers.hotspots) return;
 
-    hotspots.forEach((h, idx) => {
+    hotspots.forEach(h => {
       if (h.lat == null || h.lon == null) return;
       const el = document.createElement('div');
       el.className = 'hotspot-marker';
-      el.setAttribute('aria-label', `Hotspot: ${h.ward_name ?? ''}, LCB AQI ${Math.round(h.lcb)}`);
+      const info = describeHotspot(h);
+      el.setAttribute('aria-label', `Hotspot: ${info.title}`);
       el.innerHTML = `
         <div class="hotspot-marker__pulse"></div>
-        <div class="hotspot-marker__core" title="${h.ward_name ?? ''}: AQI ${Math.round(h.estimated_aqi ?? h.lcb)}">
-          <div class="hotspot-marker__aqi">${Math.round(h.estimated_aqi ?? h.lcb)}</div>
-          <div class="hotspot-marker__label">${h.lcb_category ?? 'Hotspot'}</div>
+        <div class="hotspot-marker__core" title="${info.title}">
+          <div class="hotspot-marker__aqi">${info.aqi}</div>
+          <div class="hotspot-marker__label">${info.category}</div>
         </div>
       `;
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
@@ -1048,7 +1020,7 @@ export default function ShwasMap({
       el.setAttribute('aria-label', `Recommended sensor #${idx + 1}: ${s.ward_name ?? ''}`);
       el.innerHTML = `
         <div class="sensor-marker__ring"></div>
-        <div class="sensor-marker__body" title="${s.ward_name ?? ''}: gap score ${s.score?.toFixed(2) ?? ''}">
+        <div class="sensor-marker__body" title="${s.ward_name ?? ''}: ${s.reason === 'unmonitored_ward' ? 'no station in this ward · ' : ''}gap score ${s.score?.toFixed(2) ?? ''}">
           <div class="sensor-marker__rank">#${idx + 1}</div>
           <div class="sensor-marker__label">${s.ward_name?.split(' ')[0] ?? 'Ward'}</div>
         </div>
@@ -1091,9 +1063,9 @@ export default function ShwasMap({
     <div className="shwas-map-wrap">
       <div ref={containerRef} className="shwas-map-canvas" />
 
-      {heatLoading && layers.heatmap && (
-        <div className="heat-progress" role="status" aria-live="polite">
-          Building surface model...
+      {layers.hotspots && Array.isArray(hotspots) && hotspots.length === 0 && (
+        <div className="hotspot-empty" role="status">
+          No hotspots above AQI 100 right now
         </div>
       )}
 

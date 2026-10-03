@@ -13,27 +13,39 @@
 }
 
 /* ── MapLibre control overrides ──────────────────────── */
-.maplibregl-ctrl-logo          { display: none !important; }
+.maplibregl-ctrl-logo {
+  display: none !important;
+}
+
 .maplibregl-ctrl-attrib {
-  background: rgba(255,255,255,0.8) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
   font-size: 10px !important;
   border-radius: var(--radius-sm) !important;
 }
+
 .maplibregl-ctrl-group {
   border-radius: var(--radius-sm) !important;
   box-shadow: var(--shadow) !important;
   border: 1px solid var(--border) !important;
   overflow: hidden;
 }
+
 .maplibregl-ctrl-group button {
-  width: 32px !important; height: 32px !important;
+  width: 32px !important;
+  height: 32px !important;
   border-bottom: 1px solid var(--border) !important;
   background: var(--white) !important;
   color: var(--text) !important;
   transition: background var(--ease) !important;
 }
-.maplibregl-ctrl-group button:last-child { border-bottom: none !important; }
-.maplibregl-ctrl-group button:hover      { background: var(--mist) !important; }
+
+.maplibregl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+  background: var(--mist) !important;
+}
 
 /* ── Popup ───────────────────────────────────────────── */
 .shwas-popup .maplibregl-popup-content {
@@ -43,16 +55,63 @@
   border: 1px solid var(--border) !important;
   font-family: var(--font);
 }
-.shwas-popup .maplibregl-popup-tip { border-top-color: var(--white) !important; }
-.shwas-popup-inner  { color: var(--text); }
-.shwas-popup-name   { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
-.shwas-popup-sub    { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-.shwas-popup-pop    { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
-.shwas-popup-aqi    { font-size: 15px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-.shwas-popup-cat    { font-size: 11px; font-weight: 600; }
-.shwas-popup-nodata { color: var(--muted) !important; font-weight: 400; }
-.shwas-popup-hint   { font-size: 10px; color: var(--sage); margin-top: 4px; }
-.shwas-popup-stations { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+.shwas-popup .maplibregl-popup-tip {
+  border-top-color: var(--white) !important;
+}
+
+.shwas-popup-inner {
+  color: var(--text);
+}
+
+.shwas-popup-name {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.shwas-popup-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.shwas-popup-pop {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.shwas-popup-aqi {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shwas-popup-cat {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.shwas-popup-nodata {
+  color: var(--muted) !important;
+  font-weight: 400;
+}
+
+.shwas-popup-hint {
+  font-size: 10px;
+  color: var(--sage);
+  margin-top: 4px;
+}
+
+.shwas-popup-stations {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 4px;
+}
 
 .aqi-chip {
   display: inline-block;
@@ -75,7 +134,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: pinDrop 220ms cubic-bezier(0.34,1.56,0.64,1);
+  animation: pinDrop 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
   cursor: default;
 }
 
@@ -89,8 +148,15 @@
 }
 
 @keyframes pinDrop {
-  from { transform: scale(0) translateY(-8px); opacity: 0; }
-  to   { transform: scale(1) translateY(0);    opacity: 1; }
+  from {
+    transform: scale(0) translateY(-8px);
+    opacity: 0;
+  }
+
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ── Heatmap loading indicator ───────────────────────── */
@@ -125,7 +191,9 @@
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Dev banner ──────────────────────────────────────── */
@@ -158,6 +226,7 @@
   min-width: 140px;
   z-index: 100;
 }
+
 .pop-legend-title {
   font-size: 10px;
   font-weight: 600;
@@ -166,12 +235,14 @@
   color: var(--muted);
   margin-bottom: 8px;
 }
+
 .pop-legend-bar {
   height: 10px;
   border-radius: 4px;
   background: linear-gradient(to right, #F3E5F5, #4A148C);
   margin-bottom: 4px;
 }
+
 .pop-legend-labels {
   display: flex;
   justify-content: space-between;
@@ -198,7 +269,10 @@
   pointer-events: none;
   transition: opacity 400ms;
 }
-.map-hint.hidden { opacity: 0; }
+
+.map-hint.hidden {
+  opacity: 0;
+}
 
 /* ── Hotspot markers (LCB-gated chronic pollution) ──── */
 .hotspot-marker {
@@ -209,6 +283,7 @@
   align-items: center;
   justify-content: center;
 }
+
 .hotspot-marker__pulse {
   position: absolute;
   inset: 0;
@@ -217,24 +292,27 @@
   border: 1.5px solid rgba(196, 72, 63, 0.45);
   animation: hotspotPulse 2.2s ease-out infinite;
 }
+
 .hotspot-marker__core {
   position: relative;
   z-index: 1;
-  background: rgba(255,255,255,0.94);
+  background: rgba(255, 255, 255, 0.94);
   border: 2px solid #C4483F;
   border-radius: 8px;
   padding: 3px 7px;
   text-align: center;
-  box-shadow: 0 2px 10px rgba(196,72,63,0.28);
+  box-shadow: 0 2px 10px rgba(196, 72, 63, 0.28);
   backdrop-filter: blur(6px);
   cursor: default;
 }
+
 .hotspot-marker__aqi {
   font-size: 14px;
   font-weight: 700;
   color: #C4483F;
   line-height: 1.1;
 }
+
 .hotspot-marker__label {
   font-size: 9px;
   font-weight: 600;
@@ -243,10 +321,22 @@
   letter-spacing: 0.04em;
   margin-top: 1px;
 }
+
 @keyframes hotspotPulse {
-  0%   { transform: scale(1);    opacity: 0.9; }
-  60%  { transform: scale(1.55); opacity: 0.2; }
-  100% { transform: scale(1.55); opacity: 0;   }
+  0% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+
+  60% {
+    transform: scale(1.55);
+    opacity: 0.2;
+  }
+
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
 }
 
 /* ── Sensor-site markers (AI recommended locations) ─── */
@@ -258,6 +348,7 @@
   align-items: center;
   justify-content: center;
 }
+
 .sensor-marker__ring {
   position: absolute;
   inset: 0;
@@ -265,24 +356,27 @@
   border: 2px dashed var(--sage);
   opacity: 0.7;
 }
+
 .sensor-marker__body {
   position: relative;
   z-index: 1;
-  background: rgba(255,255,255,0.94);
+  background: rgba(255, 255, 255, 0.94);
   border: 2px solid var(--green);
   border-radius: 8px;
   padding: 3px 7px;
   text-align: center;
-  box-shadow: 0 2px 10px rgba(62,156,120,0.22);
+  box-shadow: 0 2px 10px rgba(62, 156, 120, 0.22);
   backdrop-filter: blur(6px);
   cursor: default;
 }
+
 .sensor-marker__rank {
   font-size: 13px;
   font-weight: 700;
   color: var(--forest);
   line-height: 1.1;
 }
+
 .sensor-marker__label {
   font-size: 9px;
   font-weight: 600;
@@ -296,3 +390,21 @@
   white-space: nowrap;
 }
 
+
+/* ── Hotspot layer on, but nothing above threshold ───── */
+.hotspot-empty {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 5px 14px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  box-shadow: var(--shadow);
+  z-index: 150;
+  pointer-events: none;
+}

@@ -8,15 +8,15 @@ import './StationDetail.css';
 // Search box — searches the live stations prop
 // ─────────────────────────────────────────────────────────
 function SearchBox({ stations, onSelect }) {
-  const [q, setQ]       = useState('');
+  const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
-  const wrapRef         = useRef(null);
+  const wrapRef = useRef(null);
 
   const results = q.trim()
     ? (stations ?? []).filter(s =>
-        s.name.toLowerCase().includes(q.toLowerCase()) ||
-        String(s.ward).toLowerCase().includes(q.toLowerCase())
-      ).slice(0, 6)
+      s.name.toLowerCase().includes(q.toLowerCase()) ||
+      String(s.ward).toLowerCase().includes(q.toLowerCase())
+    ).slice(0, 6)
     : [];
 
   useEffect(() => {
@@ -30,7 +30,7 @@ function SearchBox({ stations, onSelect }) {
       <div className="search__inner">
         <svg className="search__icon" width="14" height="14" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
         </svg>
         <input
           id="station-search" type="search" className="search__input"
@@ -44,18 +44,18 @@ function SearchBox({ stations, onSelect }) {
         <div className="search__results" role="listbox" aria-label="Search results">
           {results.length > 0
             ? results.map(s => {
-                const cat = getCategory(s.aqi);
-                return (
-                  <button key={s.id} className="search__result" role="option"
-                    onClick={() => { onSelect(s); setQ(''); setOpen(false); }}>
-                    <div>
-                      <div className="search__result-name">{s.name}</div>
-                      <div className="search__result-ward">Ward {s.ward} · {s.agency}</div>
-                    </div>
-                    <span className="aqi-badge" style={{ background: cat.color }}>{s.aqi}</span>
-                  </button>
-                );
-              })
+              const cat = getCategory(s.aqi);
+              return (
+                <button key={s.id} className="search__result" role="option"
+                  onClick={() => { onSelect(s); setQ(''); setOpen(false); }}>
+                  <div>
+                    <div className="search__result-name">{s.name}</div>
+                    <div className="search__result-ward">{[s.ward ? `Ward ${s.ward}` : null, s.agency].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <span className="aqi-badge" style={{ background: cat.color }}>{s.aqi}</span>
+                </button>
+              );
+            })
             : <div className="search__empty">No station matches &ldquo;{q}&rdquo;</div>
           }
         </div>
@@ -68,12 +68,12 @@ function SearchBox({ stations, onSelect }) {
 // City AQI card — receives live cityAqi prop
 // ─────────────────────────────────────────────────────────
 const AQI_DESCRIPTIONS = {
-  'Good':         'Air quality is good. Outdoor activities are safe for everyone.',
+  'Good': 'Air quality is good. Outdoor activities are safe for everyone.',
   'Satisfactory': 'Air is acceptable. Very sensitive people may have mild symptoms.',
-  'Moderate':     'Breathing discomfort for sensitive groups and asthma patients.',
-  'Poor':         'Breathing discomfort for most people on prolonged outdoor exposure.',
-  'Very Poor':    'Respiratory illness likely on prolonged exposure. Limit time outdoors.',
-  'Severe':       'Serious risk for everyone. Avoid all outdoor physical exertion.',
+  'Moderate': 'Breathing discomfort for sensitive groups and asthma patients.',
+  'Poor': 'Breathing discomfort for most people on prolonged outdoor exposure.',
+  'Very Poor': 'Respiratory illness likely on prolonged exposure. Limit time outdoors.',
+  'Severe': 'Serious risk for everyone. Avoid all outdoor physical exertion.',
 };
 
 function CityAQICard({ aqi, loading }) {
@@ -135,8 +135,8 @@ function WardCards({ cleanest, worst, loading }) {
   return (
     <div className="ward-cards">
       {[
-        { label: 'Cleanest station',      icon: '↓', s: cleanest },
-        { label: 'Most polluted station', icon: '↑', s: worst    },
+        { label: 'Cleanest station', icon: '↓', s: cleanest },
+        { label: 'Most polluted station', icon: '↑', s: worst },
       ].map(({ label, icon, s }) => {
         const cat = getCategory(s?.aqi);
         const agency = s?.agency ?? (s?.name?.match(/-\s*(MPCB|IITM|BMC)/i)?.[1] ?? '');
@@ -173,14 +173,14 @@ function WardCards({ cleanest, worst, loading }) {
 // Layer toggles — includes Wind and fires
 // ─────────────────────────────────────────────────────────
 const LAYERS = [
-  { key: 'stations',   label: 'Stations'          },
-  { key: 'heatmap',    label: 'Heatmap'           },
-  { key: 'boundaries', label: 'Boundaries'        },
-  { key: 'population', label: 'Population'        },
-  { key: 'slums',      label: 'Slum clusters'     },
-  { key: 'windFires',  label: 'Wind and fires'    },
-  { key: 'hotspots',   label: 'Hotspots (LCB)'   },
-  { key: 'sensors',    label: 'Sensor sites (AI)' },
+  { key: 'stations', label: 'Stations' },
+  { key: 'heatmap', label: 'Heatmap' },
+  { key: 'boundaries', label: 'Boundaries' },
+  { key: 'population', label: 'Population' },
+  { key: 'slums', label: 'Slum clusters' },
+  { key: 'windFires', label: 'Wind and fires' },
+  { key: 'hotspots', label: 'Hotspots (LCB)' },
+  { key: 'sensors', label: 'Sensor sites (AI)' },
 ];
 
 function LayerToggles({ layers, onChange }) {
@@ -248,7 +248,7 @@ function StationList({ stations, selectedId, onSelect, loading }) {
               aria-label={`${s.name}, AQI ${s.aqi}, ${cat.label}`}>
               <div className="station-row__left">
                 <div className="station-row__name">{s.name}</div>
-                <div className="station-row__sub">Ward {s.ward} · {cat.label}</div>
+                <div className="station-row__sub">{s.ward ? `Ward ${s.ward} · ` : ''}{cat.label}</div>
               </div>
               <span className="aqi-badge" style={{ background: cat.color }}>{s.aqi}</span>
             </button>
@@ -323,12 +323,12 @@ function PopulationExposure({ wardExposure, loading }) {
 // Legend (exported — rendered inside map area)
 // ─────────────────────────────────────────────────────────
 const HEALTH_TIPS = {
-  'Good':         'Air quality is satisfactory. No restrictions.',
+  'Good': 'Air quality is satisfactory. No restrictions.',
   'Satisfactory': 'Unusually sensitive people should consider reducing prolonged exertion.',
-  'Moderate':     'Sensitive groups (elderly, children, respiratory/heart conditions) should reduce prolonged exertion outdoors.',
-  'Poor':         'Everyone should reduce prolonged or heavy exertion. Sensitive groups avoid outdoor activity.',
-  'Very Poor':    'Everyone should avoid prolonged exertion. Sensitive groups should stay indoors.',
-  'Severe':       'Everyone should avoid all outdoor exertion. Sensitive groups should remain indoors and keep windows closed.',
+  'Moderate': 'Sensitive groups (elderly, children, respiratory/heart conditions) should reduce prolonged exertion outdoors.',
+  'Poor': 'Everyone should reduce prolonged or heavy exertion. Sensitive groups avoid outdoor activity.',
+  'Very Poor': 'Everyone should avoid prolonged exertion. Sensitive groups should stay indoors.',
+  'Severe': 'Everyone should avoid all outdoor exertion. Sensitive groups should remain indoors and keep windows closed.',
 };
 
 export function Legend() {
