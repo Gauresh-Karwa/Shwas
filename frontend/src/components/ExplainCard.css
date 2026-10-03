@@ -1,0 +1,149 @@
+/* ── Plain-words explanation card (right panel) ──────────────────── */
+.xc {
+  margin: var(--s2);
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.xc__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.xc__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.xc__badge {
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Colour scale with a pin on today's AQI */
+.xc-gauge {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.xc-gauge__bar {
+  display: flex;
+  height: 8px;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.xc-gauge__bar span {
+  display: block;
+  height: 100%;
+}
+
+.xc-gauge__pin {
+  position: absolute;
+  top: -3px;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 3px solid;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  transform: translateX(-50%);
+}
+
+.xc-gauge__ends {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* The sentence */
+.xc__text {
+  margin: 0;
+  font-family: var(--font-head);
+  font-size: 16.5px;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.xc-num {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.xc-cat {
+  font-weight: 700;
+  padding: 0 2px;
+}
+
+.xc-pill {
+  display: inline-block;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--light-sage);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--forest);
+}
+
+.xc-wind {
+  font-style: italic;
+  color: var(--green);
+}
+
+/* What the pollutant words mean */
+.xc__gloss {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.xc__gloss li + li {
+  margin-top: 3px;
+}
+
+.xc__gloss b {
+  color: var(--forest);
+}
+
+/* Advice */
+.xc__tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 12px;
+  padding: 8px 11px;
+  background: rgba(255, 255, 255, 0.75);
+  border-left: 3px solid var(--sage);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.xc__tip b {
+  font-size: 12px;
+  color: var(--forest);
+}

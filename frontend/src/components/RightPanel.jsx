@@ -10,6 +10,8 @@ import React from 'react';
 import { getCategory } from '../utils/aqi';
 import './RightPanel.css';
 import './StationDetail.css';
+import ForecastChart24 from './ForecastChart24';
+import ExplainCard from './ExplainCard';
 
 // ── Compass helper ───────────────────────────────────────────────────
 const COMPASS_LABELS = [
@@ -36,84 +38,6 @@ function WindArrowIcon({ deg }) {
   );
 }
 
-// ── Forecast line chart (SVG, self-written) ──────────────────────────
-function ForecastChart({ forecasts, currentOffset }) {
-  if (!forecasts?.length) return null;
-  const isAllZero = forecasts.every(f => f.aqi === 0);
-  if (isAllZero) {
-    return <div style={{ padding: '20px 0', color: 'var(--sage)', fontSize: '0.85rem' }}>Insufficient historical data for forecast.</div>;
-  }
-  const W = 290, H = 76;
-  const n = forecasts.length;
-
-  const lowers = forecasts.map(f => f.aqi_lower ?? f.aqi);
-  const uppers = forecasts.map(f => f.aqi_upper ?? f.aqi);
-  const center = forecasts.map(f => f.aqi);
-
-  const minV = Math.min(...lowers) * 0.92;
-  const maxV = Math.max(...uppers) * 1.06;
-  const range = Math.max(maxV - minV, 1);
-
-  const px = i => +((i / (n - 1)) * W).toFixed(2);
-  const py = v => +((H - ((v - minV) / range) * H)).toFixed(2);
-
-  const peakAqi = Math.max(...center);
-  const lowAqi = Math.min(...center);
-
-  const bandUp = forecasts.map((f, i) =>
-    `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi_upper ?? f.aqi)}`).join('');
-  const bandDn = [...forecasts].reverse().map((f, i) =>
-    `L${px(n - 1 - i)},${py(f.aqi_lower ?? f.aqi)}`).join('');
-  const line = forecasts.map((f, i) =>
-    `${i === 0 ? 'M' : 'L'}${px(i)},${py(f.aqi)}`).join('');
-
-  const tickIdxs = [0, 6, 12, 18, n - 1].filter(i => i < n);
-  const fmtTick = ts => {
-    try {
-      return new Date(ts).toLocaleTimeString('en-IN', {
-        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata',
-      });
-    } catch { return ''; }
-  };
-
-  return (
-    <div className="rp-chart">
-      <div className="rp-chart__meta">Peak {peakAqi}, low {lowAqi}</div>
-      <svg className="fc-svg" viewBox={`0 0 ${W} ${H + 20}`}
-        aria-label="24-hour AQI forecast" role="img">
-        {/* Confidence band */}
-        <path d={`${bandUp}${bandDn}Z`} fill="var(--light-sage)" opacity="0.8" />
-        {/* Centre line — forest green */}
-        <path d={line} fill="none" stroke="var(--green)"
-          strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {/* Now dot */}
-        <circle cx={px(0)} cy={py(forecasts[0].aqi)} r="3.5" fill="var(--forest)" />
-        {/* Slider position marker */}
-        {currentOffset > 0 && currentOffset < n && (() => {
-          const mX = px(currentOffset);
-          const mY = py(forecasts[currentOffset]?.aqi ?? forecasts[0].aqi);
-          return (
-            <g>
-              <line x1={mX} y1={0} x2={mX} y2={H}
-                stroke="var(--forest)" strokeWidth="1"
-                strokeDasharray="3 2" opacity="0.45" />
-              <circle cx={mX} cy={mY} r="4"
-                fill="var(--forest)" stroke="var(--white)" strokeWidth="1.5" />
-            </g>
-          );
-        })()}
-        {/* Time labels */}
-        {tickIdxs.map(i => (
-          <text key={i} x={px(i)} y={H + 14}
-            textAnchor={i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}
-            fontSize="9" fill="var(--muted)" fontFamily="Inter, sans-serif">
-            {fmtTick(forecasts[i]?.timestamp)}
-          </text>
-        ))}
-      </svg>
-    </div>
-  );
-}
 
 // ── Source apportionment pill ────────────────────────────────────────
 function SourceTag({ pm25, pm10 }) {
@@ -226,30 +150,26 @@ export default function RightPanel({
 
       <div className="rp-body">
 
-        {/* Station pollutant grid + forecast chart */}
+        {/* 24-hour forecast: always shown for any station or clicked point */}
+        {selectedContext && (
+          <ForecastChart24
+            forecast={forecast}
+            loading={forecastLoading}
+            nowAqi={aqi}
+          />
+        )}
+
+        {/* Station pollutant grid (only when the station has readings) */}
         {selectedStation && (
           <>
-            <PollutantGrid station={selectedStation} />
-            <div className="rp-sect-label section-label" style={{ padding: '0 var(--s2) 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
-              Next 24 hours
-              <span style={{
-                fontSize: 10, fontWeight: 600, padding: '1px 7px',
-                borderRadius: 99, background: 'var(--light-sage)',
-                color: 'var(--forest)', border: '1px solid var(--sage)',
-              }}>SARIMAX · weather-aware</span>
-            </div>
-            {forecastLoading ? (
-              <span className="skeleton"
-                style={{ width: 'calc(100% - 32px)', height: 76, margin: '0 var(--s2) 12px', display: 'block' }} />
-            ) : (
-              <div style={{ padding: '0 var(--s2) 8px' }}>
-                <ForecastChart forecasts={forecast} currentOffset={forecastOffset} />
-              </div>
-            )}
+            {['pm25', 'pm10', 'no2', 'so2'].some(k => selectedStation[k] != null)
+              ? <PollutantGrid station={selectedStation} />
+              : <p className="rp-muted" style={{ padding: '0 var(--s2) 8px', fontSize: 12 }}>
+                  No pollutant readings available for this station right now.
+                </p>}
             <div className="rp-divider" />
           </>
         )}
-
         {/* Attribution: loading */}
         {loading && <Skeleton />}
 
@@ -271,11 +191,8 @@ export default function RightPanel({
         {/* Attribution: data */}
         {attribution && !loading && !error && (
           <>
-            {/* Plain-English explanation — green left border */}
-            <div className="rp-explanation" aria-label="Plain-English explanation">
-              {attribution.explanation}
-            </div>
-
+            {/* Plain-English explanation */}
+            <ExplainCard text={attribution.explanation} aqi={aqi} />
             <div className="rp-divider" />
 
             {/* Wind row */}

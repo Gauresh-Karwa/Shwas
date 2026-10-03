@@ -94,21 +94,12 @@ export function useLiveData() {
         .catch(() => { });
 
       // Pre-fetch forecasts and sensor sites (initial only)
+      // Sensor-site suggestions (initial only).
+      // Forecasts are no longer pre-fetched: the chart loads one when you click a place.
       if (isInitial) {
-        const fResults = {};
-        const [, sensorsRes] = await Promise.allSettled([
-          Promise.allSettled(
-            valid.map(async s => {
-              try {
-                const data = await forecastStation(s.id, 24, false);
-                fResults[s.id] = data.forecast ?? data.forecasts ?? (Array.isArray(data) ? data : null);
-              } catch { /* Ignore */ }
-            })
-          ),
-          fetchSensorSites(12),
-        ]);
-        setAllForecasts(prev => ({ ...fResults, ...prev }));
-        if (sensorsRes.status === 'fulfilled') setSensorSites(sensorsRes.value ?? []);
+        fetchSensorSites(12)
+          .then(v => setSensorSites(v ?? []))
+          .catch(() => { });
       }
     } catch {
       setBackendDown(true);

@@ -203,7 +203,8 @@ export async function forecastCoordinate(lat, lon, steps = 24, uncertainty = fal
   const url = `${BASE}/api/forecast/coordinate?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}&steps=${steps}&uncertainty=${uncertainty}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`forecast/coordinate HTTP ${res.status}`);
-  return res.json();
+  const data = await res.json();
+  return { ...data, forecast: cleanForecast(data.forecast) };
 }
 
 // ── /api/attribution ───────────────────────────────────────────────
