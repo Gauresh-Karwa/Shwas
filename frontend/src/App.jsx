@@ -8,7 +8,7 @@
  *  - Attribution: /api/attribution. Error state shown; never mock text.
  *  - All API keys live in the backend; frontend has none.
  */
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo , useEffect } from 'react';
 import './index.css';
 import './App.css';
 import './components/ShwasMap.css';
@@ -17,13 +17,12 @@ import TopBar from './components/TopBar';
 import LeftPanel, { Legend } from './components/LeftPanel';
 import RightPanel from './components/RightPanel';
 import ShwasMap from './components/ShwasMap';
-import TimeSlider from './components/TimeSlider';
 
 import { getCategory, dominantPollutant } from './utils/aqi';
 import { nearestStation, ptInFeature } from './utils/geo';
 import { loadWardData } from './data/wardData';
 import { useLiveData } from './hooks/useLiveData';
-
+import { forecastCoordinate } from './utils/api';
 
 const DEFAULT_LAYERS = {
   stations: true,
@@ -108,7 +107,25 @@ export default function App() {
   const [hintVisible, setHintVisible] = useState(true);
 
   // ── Time slider
-  const [forecastOffset, setForecastOffset] = useState(0);
+    // The time slider was removed: the map always shows live readings.
+  const forecastOffset = 0;
+
+  // 24-hour forecast for a clicked map point (a point has no station)
+  const [pointForecast, setPointForecast] = useState(null);
+  const [pointForecastLoading, setPointForecastLoading] = useState(false);
+  useEffect(() => {
+    if (!clickEstimate) { setPointForecast(null); setPointForecastLoading(false); return undefined; }
+    let alive = true;
+    setPointForecast(null);
+    setPointForecastLoading(true);
+    const { lat, lon } = clickEstimate;
+    forecastCoordinate(lat, lon, 24, true)
+      .catch(() => forecastCoordinate(lat, lon, 24, false)) // plain forecast if the range fails
+      .then(d => { if (alive) setPointForecast(d?.forecast ?? null); })
+      .catch(() => { if (alive) setPointForecast(null); })
+      .finally(() => { if (alive) setPointForecastLoading(false); });
+    return () => { alive = false; };
+  }, [clickEstimate]);
 
   // Attribution request context for a station / a clicked point.
   // A clicked point has no pollutant readings, so it borrows the dominant
@@ -178,10 +195,11 @@ export default function App() {
     ? { ...layers, heatmap: false }
     : layers;
 
-  const forecastsReady = Object.keys(allForecasts || {}).length > 0;
-  const forecast = selectedStation ? (allForecasts || {})[selectedStation.id] : null;
-  const forecastLoading = !!selectedStation && forecastLoadingId === selectedStation.id && !forecast; // Simplified since it's pre-fetched
-
+  const stationForecast = selectedStation ? (allForecasts || {})[selectedStation.id] : null;
+  const forecast = selectedStation ? stationForecast : pointForecast;
+  const forecastLoading = selectedStation
+    ? forecastLoadingId === selectedStation.id && !stationForecast
+    : pointForecastLoading;
   return (
     <div className="app">
       <TopBar lastUpdated={lastUpdated} />
@@ -244,11 +262,7 @@ export default function App() {
             </div>
           )}
 
-          <TimeSlider
-            offset={forecastOffset}
-            onChange={setForecastOffset}
-            hasForecasts={forecastsReady}
-          />
+        
 
           <div className={`map-hint${hintVisible ? '' : ' hidden'}`} aria-hidden="true">
             Click anywhere on the map to estimate its air quality

@@ -403,7 +403,7 @@ export default function ShwasMap({
 
     // 3 – fitBounds to Mumbai wards
     map.fitBounds(bounds, {
-      padding: { top: 40, left: 40, right: 40, bottom: 130 }, // bottom room for the slider
+      padding: { top: 40, left: 40, right: 40, bottom: 40 }, // bottom room for the slider
       duration: 0,
       maxZoom: 12,
     });
