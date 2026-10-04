@@ -74,15 +74,10 @@ export function useLiveData() {
           }
         }
 
-        // Try to find a station with an actual updated_at, otherwise use the server response date
-        let updatedTime = timestamp;
-        for (const s of valid) {
-          if (s.updated_at) {
-            updatedTime = s.updated_at;
-            break;
-          }
-        }
-        setLastUpdated(updatedTime);
+        // Use the current time as the "last fetched" timestamp so the TopBar
+        // always shows when the frontend last successfully refreshed from the backend,
+        // not the (potentially stale) station reading time from the DB.
+        setLastUpdated(new Date().toISOString());
       }
 
       setBackendDown(false);

@@ -46,7 +46,7 @@ export default function TopBar({ lastUpdated }) {
         <span className="topbar__datetime">{dateStr}, {timeStr}</span>
         {updStr ? (
           <span className="topbar__updated">
-            Live &middot; refreshes every 5 min
+            Live · updated {updStr}
           </span>
         ) : (
           <span className="topbar__updated">

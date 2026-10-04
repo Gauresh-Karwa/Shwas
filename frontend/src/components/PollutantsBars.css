@@ -1,0 +1,82 @@
+/* ── Pollutant bars (right panel) ────────────────────────────────── */
+.pb {
+  margin: var(--s2);
+  padding: 12px 12px 10px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+
+.pb__title {
+  margin: 0 0 10px;
+  font-family: var(--font-head);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pb__row {
+  display: grid;
+  grid-template-columns: 74px 1fr 82px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.pb__name {
+  display: flex;
+  flex-direction: column;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.pb__lead {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--forest);
+}
+
+.pb__track {
+  position: relative;
+  height: 10px;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.pb__fill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+}
+
+.pb__val {
+  text-align: right;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.pb__val small {
+  margin-left: 3px;
+  font-size: 9.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.pb__note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.pb__empty {
+  margin: var(--s2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
