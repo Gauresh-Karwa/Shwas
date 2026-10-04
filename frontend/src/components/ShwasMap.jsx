@@ -743,7 +743,24 @@ export default function ShwasMap({
           data = await apiInterpolate(lat, lng);
           apiCacheRef.current.set(cacheKey, data);
         }
-        onClickEstimateRef.current?.({ ...data, lat, lon: lng });
+
+        // If a real station is within 1.5 km, use its measured AQI so the
+        // right-panel value matches the station bubble the user sees on the map.
+        const pts = stationPointsRef.current ?? [];
+        const kx = Math.cos((lat * Math.PI) / 180);
+        let nearestDist = Infinity, nearestStation = null;
+        for (const s of pts) {
+          if (s.aqi == null || s.lat == null || s.lon == null) continue;
+          const distKm = Math.hypot((s.lon - lng) * kx, s.lat - lat) * 111;
+          if (distKm < nearestDist) { nearestDist = distKm; nearestStation = s; }
+        }
+        const snapped = nearestStation && nearestDist <= 1.5;
+        onClickEstimateRef.current?.({
+          ...data,
+          lat,
+          lon: lng,
+          estimated_aqi: snapped ? nearestStation.aqi : data.estimated_aqi,
+        });
       } catch {
         // Fallback: IDW from current station data
         const pts = stationPointsRef.current ?? [];
@@ -755,6 +772,7 @@ export default function ShwasMap({
           stations_used: pts.length,
         });
       }
+
     });
   };
 

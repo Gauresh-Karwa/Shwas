@@ -235,7 +235,7 @@ export async function getAttributionFor(ctx) {
     ctx.name ?? 'Unknown location',
     aqi,
     getCategory(aqi).label,
-    ctx.dominantPollutant ?? 'PM2.5',
+    ctx.dominantPollutant ?? 'mixed pollutants',
   );
 }
 

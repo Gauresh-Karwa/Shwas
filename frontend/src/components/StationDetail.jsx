@@ -136,7 +136,6 @@ function AttributionCard({ data, loading }) {
   const factors = [];
   if (fires?.length) factors.push('Fire smoke');
   if (wind?.speed_mps != null) factors.push(`${wind.compass ?? 'Wind'} wind`);
-  factors.push('Traffic');
 
   // Build data pills
   const pills = [];
@@ -233,7 +232,7 @@ export function StationDetailCard({ station, forecast, forecastLoading, attribut
 export function EstimateCard({ estimate, onClose }) {
   if (!estimate) return null;
 
-  const { lat, lon, estimated_aqi, model, stations_used, uncertainty_std } = estimate;
+  const { lat, lon, estimated_aqi, model, stations_used, uncertainty_std , confidence, nearest_station_distance_km } = estimate;
   const aqi = Math.round(estimated_aqi ?? 0);
   const cat = getCategory(aqi);
   const uncert = uncertainty_std != null ? Math.round(uncertainty_std) : null;
@@ -285,6 +284,19 @@ export function EstimateCard({ estimate, onClose }) {
             <div className="est-card__meta-row">
               <span className="est-card__meta-key">Based on</span>
               <span className="est-card__meta-val">{stations_used} stations</span>
+            </div>
+          )}
+
+          {nearest_station_distance_km != null && (
+            <div className="est-card__meta-row">
+              <span className="est-card__meta-key">Nearest station</span>
+              <span className="est-card__meta-val">{nearest_station_distance_km} km away</span>
+            </div>
+          )}
+          {confidence && (
+            <div className="est-card__meta-row">
+              <span className="est-card__meta-key">Confidence</span>
+              <span className="est-card__meta-val" style={{ textTransform: 'capitalize' }}>{confidence}</span>
             </div>
           )}
           {uncert != null && (

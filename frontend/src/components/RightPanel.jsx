@@ -12,6 +12,7 @@ import './RightPanel.css';
 import './StationDetail.css';
 import ForecastChart24 from './ForecastChart24';
 import ExplainCard from './ExplainCard';
+import PollutantBars from './PollutantsBars';
 
 // ── Compass helper ───────────────────────────────────────────────────
 const COMPASS_LABELS = [
@@ -62,25 +63,11 @@ function SourceTag({ pm25, pm10 }) {
   );
 }
 
-// ── Pollutant grid ───────────────────────────────────────────────────
-function PollutantGrid({ station }) {
-  const items = [
-    { key: 'pm25', label: 'PM2.5' },
-    { key: 'pm10', label: 'PM10' },
-    { key: 'no2', label: 'NO₂' },
-    { key: 'so2', label: 'SO₂' },
-  ];
+// ── Pollutant levels (bars) + source tag ─────────────────────────────
+function PollutantGrid({ station, note }) {
   return (
     <>
-      <div className="sdc__pollutants" aria-label="Pollutant concentrations">
-        {items.map(({ key, label }) => (
-          <div key={key} className="sdc__poll-cell">
-            <div className="sdc__poll-val">{station[key] ?? '—'}</div>
-            <div className="sdc__poll-name">{label}</div>
-            <div className="sdc__poll-unit">μg/m³</div>
-          </div>
-        ))}
-      </div>
+      <PollutantBars readings={station} note={note} />
       <SourceTag pm25={station.pm25} pm10={station.pm10} />
     </>
   );
@@ -107,6 +94,7 @@ function Skeleton() {
 export default function RightPanel({
   selectedStation,   // full station object (has pollutants) | null
   selectedContext,   // { name, lat, lon, aqi } — station or clicked point
+  pointPollutants,   // estimated pollutants for a clicked point | null
   attribution,       // real API data | null
   loading,
   error,
@@ -170,6 +158,22 @@ export default function RightPanel({
             <div className="rp-divider" />
           </>
         )}
+
+        {/* Clicked point (no station): pollutants estimated from nearby stations */}
+        {!selectedStation && selectedContext && (
+          <>
+            {pointPollutants
+              ? <PollutantGrid
+                  station={pointPollutants}
+                  note={`Estimated from the ${pointPollutants.used} nearest station${pointPollutants.used > 1 ? 's' : ''}. There is no sensor at this spot.`}
+                />
+              : <p className="rp-muted" style={{ padding: '0 var(--s2) 8px', fontSize: 12 }}>
+                  No pollutant readings from nearby stations right now, so levels can&apos;t be estimated here.
+                </p>}
+            <div className="rp-divider" />
+          </>
+        )}        
+
         {/* Attribution: loading */}
         {loading && <Skeleton />}
 
