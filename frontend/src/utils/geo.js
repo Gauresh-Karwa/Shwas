@@ -110,3 +110,30 @@ export function nearestStation(lat, lon, stations, accept = () => true) {
   }
   return best;
 }
+// Estimate pollutant levels at any point from the nearest stations that have readings.
+// Inverse-distance weighting, separately for each pollutant. Returns null if no
+// nearby station reports any pollutant.
+export function estimatePollutantsAt(lat, lon, stations, k = 5) {
+  const kx = Math.cos((lat * Math.PI) / 180);
+  const out = {};
+  let any = false;
+  let used = 0;
+  for (const f of ['pm25', 'pm10', 'no2', 'so2']) {
+    const near = (stations ?? [])
+      .filter(s => s[f] != null && s.lat != null && s.lon != null)
+      .map(s => ({ v: s[f], d: Math.hypot((s.lon - lon) * kx, s.lat - lat) * 111 })) // km
+      .sort((a, b) => a.d - b.d)
+      .slice(0, k);
+    if (!near.length) { out[f] = null; continue; }
+    let num = 0, den = 0;
+    for (const p of near) {
+      const w = 1 / Math.max(p.d, 0.2) ** 2;
+      num += w * p.v;
+      den += w;
+    }
+    out[f] = Math.round((num / den) * 10) / 10;
+    any = true;
+    used = Math.max(used, near.length);
+  }
+  return any ? { ...out, used } : null;
+}

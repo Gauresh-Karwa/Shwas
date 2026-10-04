@@ -19,7 +19,7 @@ import RightPanel from './components/RightPanel';
 import ShwasMap from './components/ShwasMap';
 
 import { getCategory, dominantPollutant } from './utils/aqi';
-import { nearestStation, ptInFeature } from './utils/geo';
+import { nearestStation, ptInFeature, estimatePollutantsAt } from './utils/geo';
 import { loadWardData } from './data/wardData';
 import { useLiveData } from './hooks/useLiveData';
 import { forecastCoordinate } from './utils/api';
@@ -136,12 +136,12 @@ export default function App() {
   }), []);
 
   const pointCtx = useCallback(est => {
-    const near = nearestStation(est.lat, est.lon, stations, st => dominantPollutant(st) != null);
+    const pp = estimatePollutantsAt(est.lat, est.lon, stations);
     return {
       lat: est.lat, lon: est.lon,
       aqi: Math.round(est.estimated_aqi ?? 0),
       name: est.place ? `${est.place}, Mumbai` : 'this location',
-      dominantPollutant: near ? dominantPollutant(near) : undefined,
+      dominantPollutant: pp ? dominantPollutant(pp) ?? undefined : undefined,
     };
   }, [stations]);
 
@@ -184,11 +184,16 @@ export default function App() {
   const cleanest = liveStations.length ? [...liveStations].sort((a, b) => a.aqi - b.aqi)[0] : null;
   const worst = liveStations.length ? [...liveStations].sort((a, b) => b.aqi - a.aqi)[0] : null;
 
+  const pointPollutants = useMemo(
+    () => (clickEstimate ? estimatePollutantsAt(clickEstimate.lat, clickEstimate.lon, stations) : null),
+    [clickEstimate, stations],
+  );
+
   const selectedContext = selectedStation
     ? { name: selectedStation.name, lat: selectedStation.lat, lon: selectedStation.lon, aqi: selectedStation.aqi }
     : clickEstimate
-      ? { name: null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
-      : null;
+    ? { name: clickEstimate.place ? `${clickEstimate.place}, Mumbai` : null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
+    : null;
 
   // When backend is down, hide heatmap (it would only show interpolated mock values)
   const effectiveLayers = backendDown
@@ -273,6 +278,7 @@ export default function App() {
         <RightPanel
           selectedStation={selectedStation}
           selectedContext={selectedContext}
+          pointPollutants={pointPollutants}          
           attribution={attribution}
           loading={attributionLoading}
           error={attributionError}
