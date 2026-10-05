@@ -87,7 +87,7 @@ $$y_t=\beta^{\top}x_t+\eta_t,\qquad \phi(B)\,\Phi(B^{24})\,\eta_t=\theta(B)\,\va
 
 **5. Chained forecast at any location $\ell$.** Station forecasts for horizon $h$ are passed through the Spatial GNN:
 
-$$\hat{y}_\ell(t+h) = f_{\mathrm{GNN}}\!\left( \left\{ \hat{y}_s(t+h) \right\}_{s\in S}, \ell \right)$$
+$$\hat{y}_\ell(t+h) = f_{\mathrm{GNN}}\!\left( \left\lbrace \hat{y}_s(t+h) \right\rbrace_{s\in S}, \ell \right)$$
 
 **6. CPCB AQI.** Piecewise linear sub-index for each pollutant $p$, and the overall AQI as the maximum:
 
