@@ -408,3 +408,26 @@
   z-index: 150;
   pointer-events: none;
 }
+
+/* ── Waste-burning dump-site markers ─────────────────────────────── */
+.waste-marker { cursor: pointer; }
+.waste-marker__body {
+  position: relative;
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; color: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+.waste-marker__body--likely   { background: #d32f2f; }
+.waste-marker__body--possible { background: #f57c00; }
+.waste-marker__body--watch    { background: #f9a825; color: #222; }
+.waste-marker__body--none     { background: #607d8b; }
+.waste-marker__body--likely::before {
+  content: ''; position: absolute; inset: -4px; border-radius: 999px;
+  border: 2px solid #d32f2f; animation: waste-pulse 1.6s ease-out infinite;
+}
+@keyframes waste-pulse {
+  0%   { transform: scale(0.9); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}

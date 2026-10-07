@@ -33,6 +33,7 @@ const DEFAULT_LAYERS = {
   windFires: true,
   hotspots: false,
   sensors: false,
+  wasteBurn: true,
 };
 
 function cityAqi(stations) {
@@ -83,6 +84,7 @@ export default function App() {
     wardExposure,
     hotspots,
     sensorSites,
+    wasteBurning,
     allForecasts,
     lastUpdated,
     backendDown,
@@ -255,6 +257,7 @@ export default function App() {
             firesData={attribution?.fires}
             hotspots={hotspots}
             sensorSites={sensorSites}
+            wasteBurning={wasteBurning}
           />
 
           <Legend />

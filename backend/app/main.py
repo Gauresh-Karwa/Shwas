@@ -10,6 +10,7 @@ from app.config import settings
 from app.routers.wards import router as wards_router
 from app.routers.attribution import router as attribution_router
 from app.routers.recommendations import router as recommendations_router
+from app.routers.waste import router as waste_router
 
 app = FastAPI(
     title="Shwas AQI API",
@@ -30,7 +31,7 @@ app.include_router(forecast_router)
 app.include_router(wards_router)
 app.include_router(attribution_router)
 app.include_router(recommendations_router)
-
+app.include_router(waste_router)
 
 @app.get("/health", tags=["meta"])
 def health():

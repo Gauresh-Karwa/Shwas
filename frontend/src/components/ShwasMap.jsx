@@ -229,6 +229,7 @@ export default function ShwasMap({
   firesData = null, // [{lat, lon, distance_km, frp_mw}] | null
   hotspots = [],   // [{lat, lon, ward_name, lcb, lcb_category}]
   sensorSites = [],   // [{lat, lon, ward_name, score, estimated_aqi}]
+  wasteBurning = [],
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -244,6 +245,7 @@ export default function ShwasMap({
   const fireMarkersRef = useRef([]);     // array of HTMLMarkers for fires
   const hotspotMarkersRef = useRef([]);     // array of HTMLMarkers for LCB hotspots
   const sensorMarkersRef = useRef([]);     // array of HTMLMarkers for sensor sites
+  const wasteMarkersRef = useRef([]);
 
   // Always-current prop mirrors (safe inside async / RAF callbacks)
   const wardGeoRef = useRef(null);   // annotated ward GeoJSON (set once in onLoad)
@@ -1049,6 +1051,40 @@ export default function ShwasMap({
       sensorMarkersRef.current.push(marker);
     });
   }, [sensorSites, layers.sensors]);
+
+  // ── Waste-burning markers (dump sites) ───────────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    wasteMarkersRef.current.forEach(m => m.remove());
+    wasteMarkersRef.current = [];
+    if (!map || !styleReadyRef.current || !wasteBurning?.length || !layers.wasteBurn) return;
+
+    const LABELS = { likely: 'Burning likely', possible: 'Burning possible', watch: 'Watch', none: 'No burning' };
+    wasteBurning.forEach(site => {
+      if (site.lat == null || site.lon == null) return;
+      const level = LABELS[site.level] ? site.level : 'none';
+      const el = document.createElement('div');
+      el.className = 'waste-marker';
+      el.setAttribute('aria-label', `${site.name}: ${LABELS[level]}`);
+      el.innerHTML = `
+        <div class="waste-marker__body waste-marker__body--${level}">
+          <span class="waste-marker__icon">&#9851;</span>
+          <span class="waste-marker__label">${LABELS[level]}</span>
+        </div>
+      `;
+      const reasons = (site.reasons ?? []).map(r => `<li>${r}</li>`).join('');
+      const popup = new maplibregl.Popup({ offset: 18, closeButton: true, maxWidth: '260px' }).setHTML(`
+        <strong>${site.name}</strong><br/>
+        ${LABELS[level]} (score ${site.score}/100)${site.simulated ? ' <em>[simulated demo]</em>' : ''}
+        <ul style="margin:6px 0 0 16px;padding:0">${reasons}</ul>
+      `);
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([site.lon, site.lat])
+        .setPopup(popup)
+        .addTo(map);
+      wasteMarkersRef.current.push(marker);
+    });
+  }, [wasteBurning, layers.wasteBurn]);
 
   // ── Fire markers ─────────────────────────────────────────────────
   useEffect(() => {
