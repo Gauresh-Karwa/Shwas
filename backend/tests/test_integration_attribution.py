@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 
+import pandas as pd
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -30,6 +31,14 @@ def db_session():
     finally:
         session.close()
         engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _no_wind_history():
+    """The air-mass trace calls the weather API; keep these tests offline."""
+    empty = pd.DataFrame(columns=["ds", "wind_speed_mps", "wind_dir_deg"])
+    with patch("app.attribution.attribution_service.get_recent_wind", return_value=empty):
+        yield
 
 
 @pytest.fixture()
@@ -141,6 +150,7 @@ class TestAttributionNoExternalCalls:
             observed_at=datetime.now(tz=timezone.utc),
         )
         with (
+            patch("app.attribution.attribution_service.settings.OPENWEATHERMAP_API_KEY", "mock-key"),
             patch("app.attribution.attribution_service.get_wind_data", return_value=mock_wind),
             patch("app.attribution.attribution_service.get_nearby_fires", return_value=[]),
             patch("app.attribution.attribution_service.get_explanation", return_value="Stagnant air."),
@@ -165,6 +175,7 @@ class TestAttributionNoExternalCalls:
             frp_mw=22.0, confidence="h",
         )
         with (
+            patch("app.attribution.attribution_service.settings.FIRMS_MAP_KEY", "mock-key"),
             patch("app.attribution.attribution_service.get_wind_data", return_value=None),
             patch("app.attribution.attribution_service.get_nearby_fires", return_value=[mock_fire]),
             patch("app.attribution.attribution_service.get_explanation", return_value="Fire smoke."),

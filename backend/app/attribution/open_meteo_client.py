@@ -86,3 +86,39 @@ def get_forecast_weather(lat: float, lon: float, hours: int = 48) -> pd.DataFram
         print(f"Open-Meteo forecast request failed: {type(e).__name__}: {e}")
         return _empty_frame()
     return df.head(hours).reset_index(drop=True)
+
+
+def get_recent_wind(lat: float, lon: float, hours: int = 12) -> pd.DataFrame:
+    """Hourly 10 m wind for the last `hours` hours up to the current hour (UTC).
+
+    Uses the forecast endpoint's `past_hours` window, which covers the most
+    recent hours that the ERA5 archive does not have yet. Columns: ds,
+    wind_speed_mps, wind_dir_deg (meteorological: the direction wind blows FROM).
+    """
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "hourly": "wind_speed_10m,wind_direction_10m",
+        "past_hours": max(1, min(48, int(hours))),
+        "forecast_hours": 1,
+        "wind_speed_unit": "ms",
+        "timezone": "UTC",
+    }
+    columns = ["ds", "wind_speed_mps", "wind_dir_deg"]
+    try:
+        response = requests.get(FORECAST_URL, params=params, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        hourly = response.json().get("hourly")
+    except requests.exceptions.RequestException as e:
+        print(f"Open-Meteo recent wind request failed: {type(e).__name__}: {e}")
+        return pd.DataFrame(columns=columns)
+    if not hourly or "time" not in hourly:
+        return pd.DataFrame(columns=columns)
+    ds = pd.to_datetime(hourly["time"])
+    if getattr(ds, "tz", None) is not None:
+        ds = ds.tz_localize(None)
+    return pd.DataFrame({
+        "ds": ds,
+        "wind_speed_mps": hourly.get("wind_speed_10m"),
+        "wind_dir_deg": hourly.get("wind_direction_10m"),
+    })

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, Query
+from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.interpolate import router as interpolate_router
 from app.routers.forecast import router as forecast_router
@@ -7,6 +8,8 @@ from app.attribution.fire_client import get_nearby_fires
 from app.attribution.news_search import search_air_quality_news
 from app.attribution.llm_explainer import get_explanation
 from app.config import settings
+from app.db import get_db
+from app.attribution.attribution_service import get_air_mass
 from app.routers.wards import router as wards_router
 from app.routers.attribution import router as attribution_router
 from app.routers.recommendations import router as recommendations_router
@@ -45,26 +48,33 @@ def attribution(
     aqi: float = Query(100.0),
     category: str = Query("Moderate"),
     dominant_pollutant: str = Query("PM2.5"),
+    db: Session = Depends(get_db),
 ):
     wind = None
     fires = []
     news = []
+    air_mass = None
     explanation = f"Air quality is {category} (AQI {int(aqi)}), primarily driven by {dominant_pollutant}."
 
     try:
         wind = get_wind_data(lat, lon, settings.OPENWEATHERMAP_API_KEY)
     except Exception:
-        pass
+        wind = None
 
     try:
         fires = get_nearby_fires(settings.FIRMS_MAP_KEY, lat, lon)
     except Exception:
-        pass
+        fires = []
 
     try:
         news = search_air_quality_news(area_name=station_name)
     except Exception:
-        pass
+        news = []
+
+    try:
+        air_mass = get_air_mass(db, lat, lon, fires)
+    except Exception:
+        air_mass = None
 
     try:
         explanation = get_explanation(
@@ -76,9 +86,15 @@ def attribution(
             fires=fires,
             news=news,
             api_key=settings.GEMINI_API_KEY,
+            trajectory=air_mass,
         )
     except Exception:
-        pass
+        fallback = f"Air quality is {category} (AQI {int(aqi)}), primarily driven by {dominant_pollutant}."
+        if air_mass:
+            fallback += f" {air_mass.summary()}"
+        explanation = fallback
+
+    on_path = {(f.lat, f.lon) for f in air_mass.fires_on_path} if air_mass else set()
 
     return {
         "wind": {
@@ -92,6 +108,7 @@ def attribution(
                 "lon": f.longitude,
                 "distance_km": round(f.distance_km, 1),
                 "frp_mw": f.frp_mw,
+                "upwind": (f.latitude, f.longitude) in on_path if air_mass else None,
             }
             for f in fires[:5]
         ],
@@ -99,5 +116,6 @@ def attribution(
             {"title": n.title, "url": n.url, "domain": n.domain}
             for n in news[:3]
         ],
+        "air_mass": air_mass.to_dict() if air_mass else None,
         "explanation": explanation,
     }
