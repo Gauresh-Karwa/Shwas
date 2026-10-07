@@ -209,7 +209,8 @@ export async function forecastCoordinate(lat, lon, steps = 24, uncertainty = fal
 
 // ── /api/attribution ───────────────────────────────────────────────
 // Returns: { wind, fires: [{ lat, lon, distance_km, frp_mw }],
-//            news: [{ title, url, domain }], explanation }
+//            news: [{ title, url, domain }], explanation,
+//            air_mass: back-trajectory { points, origin, over, fires_on_path, summary, ... } | null }
 export async function getAttribution(lat, lon, stationName, aqi, category, dominantPollutant) {
   const params = new URLSearchParams({
     lat: lat.toFixed(6),

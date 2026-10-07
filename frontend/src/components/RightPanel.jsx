@@ -8,6 +8,7 @@
  */
 import React from 'react';
 import { getCategory } from '../utils/aqi';
+import { describeAirMass } from '../utils/airMass';
 import './RightPanel.css';
 import './StationDetail.css';
 import ForecastChart24 from './ForecastChart24';
@@ -106,6 +107,7 @@ export default function RightPanel({
   const isOpen = !!(selectedContext || loading || error);
 
   const aqi = selectedContext?.aqi ?? 0;
+  const airPath = describeAirMass(attribution?.air_mass);
   const cat = getCategory(aqi);
   const name = selectedContext?.name ?? null;
 
@@ -153,8 +155,8 @@ export default function RightPanel({
             {['pm25', 'pm10', 'no2', 'so2'].some(k => selectedStation[k] != null)
               ? <PollutantGrid station={selectedStation} />
               : <p className="rp-muted" style={{ padding: '0 var(--s2) 8px', fontSize: 12 }}>
-                  No pollutant readings available for this station right now.
-                </p>}
+                No pollutant readings available for this station right now.
+              </p>}
             <div className="rp-divider" />
           </>
         )}
@@ -164,15 +166,15 @@ export default function RightPanel({
           <>
             {pointPollutants
               ? <PollutantGrid
-                  station={pointPollutants}
-                  note={`Estimated from the ${pointPollutants.used} nearest station${pointPollutants.used > 1 ? 's' : ''}. There is no sensor at this spot.`}
-                />
+                station={pointPollutants}
+                note={`Estimated from the ${pointPollutants.used} nearest station${pointPollutants.used > 1 ? 's' : ''}. There is no sensor at this spot.`}
+              />
               : <p className="rp-muted" style={{ padding: '0 var(--s2) 8px', fontSize: 12 }}>
-                  No pollutant readings from nearby stations right now, so levels can&apos;t be estimated here.
-                </p>}
+                No pollutant readings from nearby stations right now, so levels can&apos;t be estimated here.
+              </p>}
             <div className="rp-divider" />
           </>
-        )}        
+        )}
 
         {/* Attribution: loading */}
         {loading && <Skeleton />}
@@ -218,6 +220,26 @@ export default function RightPanel({
               </div>
             </div>
 
+            {/* Air path row (back-trajectory) */}
+            {airPath && (
+              <div className="rp-row">
+                <div className="rp-row__icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="#1D5C8C" strokeWidth="2"
+                    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="5" cy="18" r="2" />
+                    <circle cx="19" cy="6" r="2" />
+                    <path d="M7 17c4-1 3-5 6-6s4-2 4-3" strokeDasharray="2 3" />
+                  </svg>
+                </div>
+                <div className="rp-row__body">
+                  <div className="rp-row__label">Where this air came from</div>
+                  <div className="rp-row__val"><strong>{airPath.headline}</strong></div>
+                  {airPath.detail && <div className="rp-row__sub">{airPath.detail}</div>}
+                </div>
+              </div>
+            )}
+
             {/* Fires row */}
             <div className="rp-row">
               <div className="rp-row__icon">
@@ -242,13 +264,8 @@ export default function RightPanel({
                           <span>
                             {f.distance_km != null ? `${f.distance_km} km away` : 'Nearby'}
                             {f.frp_mw != null && ` · ${Number(f.frp_mw).toFixed(1)} MW`}
-                            {f.upwind === true && (
-                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#b91c1c', background: '#fee2e2', padding: '1px 5px', borderRadius: 4 }}>Upwind</span>
-                            )}
-                            {f.upwind === false && (
-                              <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>Off path</span>
-                            )}
                           </span>
+                          {f.upwind === true && <span className="rp-fire-tag">upwind</span>}
                         </div>
                       ))}
                     </div>
@@ -258,37 +275,6 @@ export default function RightPanel({
                 )}
               </div>
             </div>
-
-            {/* Air-mass back-trajectory row */}
-            {attribution.air_mass && (
-              <div className="rp-row">
-                <div className="rp-row__icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-                    stroke="var(--sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <polyline points="12 6 12 12 16 14" />
-                  </svg>
-                </div>
-                <div className="rp-row__body">
-                  <div className="rp-row__label">Air-mass trace ({attribution.air_mass.hours}h)</div>
-                  <div className="rp-row__val" style={{ fontSize: 12, lineHeight: 1.4 }}>
-                    {attribution.air_mass.stagnant ? (
-                      <span>Light winds (~{attribution.air_mass.mean_speed_mps} m/s) with poor dispersion</span>
-                    ) : (
-                      <span>
-                        Arrived from the <strong>{attribution.air_mass.origin?.compass || 'upwind'}</strong> (~{Math.round(attribution.air_mass.path_km)} km)
-                        {attribution.air_mass.over?.sea && ` · ${Math.round(attribution.air_mass.over.marine_hours)}h marine`}
-                      </span>
-                    )}
-                  </div>
-                  {attribution.air_mass.over?.wards?.length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                      Traversed: {attribution.air_mass.over.wards.map(w => w.ward_name).join(' → ')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* News */}
             {attribution.news?.length > 0 && (

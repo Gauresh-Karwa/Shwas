@@ -21,6 +21,8 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { loadWardData } from '../data/wardData';
 import { computeWardAqi } from '../utils/geo';
 import { getAQIColor, getCategory, describeHotspot } from '../utils/aqi';
+import { airMassBounds } from '../utils/airMass';
+import { addAirMassLayers, setAirMass } from '../utils/airMassLayer';
 import { interpolate as apiInterpolate } from '../utils/api';
 import './ShwasMap.css';
 
@@ -226,10 +228,10 @@ export default function ShwasMap({
   forecastOffset = 0,    // 0-23 hours; 0 = live
   allForecasts = null, // { [stationId]: forecast[] }
   windData = null, // { speed_mps, direction_deg, compass } | null
-  firesData = null, // [{lat, lon, distance_km, frp_mw}] | null
+  firesData = null, // [{lat, lon, distance_km, frp_mw, upwind}] | null
+  airMass = null,   // /api/attribution air_mass (back-trajectory) | null
   hotspots = [],   // [{lat, lon, ward_name, lcb, lcb_category}]
   sensorSites = [],   // [{lat, lon, ward_name, score, estimated_aqi}]
-  wasteBurning = [],
 }) {
   const containerRef = useRef(null);
   const mapRef = useRef(null);
@@ -243,9 +245,9 @@ export default function ShwasMap({
   const styleReadyRef = useRef(false);
   const windMarkerRef = useRef(null);   // HTMLMarker for wind arrow
   const fireMarkersRef = useRef([]);     // array of HTMLMarkers for fires
+  const airMassFitRef = useRef(null);    // last air_mass the camera was fitted to
   const hotspotMarkersRef = useRef([]);     // array of HTMLMarkers for LCB hotspots
   const sensorMarkersRef = useRef([]);     // array of HTMLMarkers for sensor sites
-  const wasteMarkersRef = useRef([]);
 
   // Always-current prop mirrors (safe inside async / RAF callbacks)
   const wardGeoRef = useRef(null);   // annotated ward GeoJSON (set once in onLoad)
@@ -624,6 +626,9 @@ export default function ShwasMap({
         ['in', ['get', 'id'], ['literal', []]]
       ],
     });
+
+    // Air-mass back-trajectory: under the station circles, above everything else
+    addAirMassLayers(map, 'stations-ring');
 
     // 7 – Ward hover interactions ─────────────────────────────
     // AQI is computed live at the hovered point via IDW, so it always
@@ -1052,40 +1057,6 @@ export default function ShwasMap({
     });
   }, [sensorSites, layers.sensors]);
 
-  // ── Waste-burning markers (dump sites) ───────────────────────────
-  useEffect(() => {
-    const map = mapRef.current;
-    wasteMarkersRef.current.forEach(m => m.remove());
-    wasteMarkersRef.current = [];
-    if (!map || !styleReadyRef.current || !wasteBurning?.length || !layers.wasteBurn) return;
-
-    const LABELS = { likely: 'Burning likely', possible: 'Burning possible', watch: 'Watch', none: 'No burning' };
-    wasteBurning.forEach(site => {
-      if (site.lat == null || site.lon == null) return;
-      const level = LABELS[site.level] ? site.level : 'none';
-      const el = document.createElement('div');
-      el.className = 'waste-marker';
-      el.setAttribute('aria-label', `${site.name}: ${LABELS[level]}`);
-      el.innerHTML = `
-        <div class="waste-marker__body waste-marker__body--${level}">
-          <span class="waste-marker__icon">&#9851;</span>
-          <span class="waste-marker__label">${LABELS[level]}</span>
-        </div>
-      `;
-      const reasons = (site.reasons ?? []).map(r => `<li>${r}</li>`).join('');
-      const popup = new maplibregl.Popup({ offset: 18, closeButton: true, maxWidth: '260px' }).setHTML(`
-        <strong>${site.name}</strong><br/>
-        ${LABELS[level]} (score ${site.score}/100)${site.simulated ? ' <em>[simulated demo]</em>' : ''}
-        <ul style="margin:6px 0 0 16px;padding:0">${reasons}</ul>
-      `);
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat([site.lon, site.lat])
-        .setPopup(popup)
-        .addTo(map);
-      wasteMarkersRef.current.push(marker);
-    });
-  }, [wasteBurning, layers.wasteBurn]);
-
   // ── Fire markers ─────────────────────────────────────────────────
   useEffect(() => {
     const map = mapRef.current;
@@ -1098,13 +1069,13 @@ export default function ShwasMap({
     firesData.forEach(fire => {
       if (fire.lat == null || fire.lon == null) return;
       const el = document.createElement('div');
-      el.className = 'fire-marker';
-      el.setAttribute('aria-label', `Fire ${fire.distance_km ?? '?'} km away`);
+      el.className = fire.upwind ? 'fire-marker fire-marker--upwind' : 'fire-marker';
+      el.setAttribute('aria-label', `Fire ${fire.distance_km ?? '?'} km away${fire.upwind ? ', upwind of the station' : ''}`);
       const mw = fire.frp_mw != null ? `${Number(fire.frp_mw).toFixed(1)}MW` : '';
       const km = fire.distance_km != null ? `${fire.distance_km}km` : '';
       el.innerHTML = `
         <div class="fire-marker__triangle"></div>
-        <div class="fire-marker__label">${[km, mw].filter(Boolean).join(' · ')}</div>
+        <div class="fire-marker__label">${[fire.upwind ? 'upwind' : '', km, mw].filter(Boolean).join(' · ')}</div>
       `;
       const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([fire.lon, fire.lat])
@@ -1112,6 +1083,25 @@ export default function ShwasMap({
       fireMarkersRef.current.push(marker);
     });
   }, [firesData, layers.windFires]);
+
+  // Air-mass back-trajectory: draw the path and, when it runs off screen, zoom out to show it
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReadyRef.current) return;
+    const visible = setAirMass(map, airMass, Boolean(layers.windFires));
+    const bounds = airMassBounds(airMass);
+    if (visible && bounds && airMassFitRef.current !== airMass) {
+      airMassFitRef.current = airMass;
+      const origin = airMass.origin;
+      if (!map.getBounds().contains([origin.lon, origin.lat])) {
+        map.fitBounds(bounds, {
+          padding: { top: 100, bottom: 120, left: 60, right: 60 },
+          maxZoom: 11,
+          duration: 700,
+        });
+      }
+    }
+  }, [airMass, layers.windFires]);
 
   return (
     <div className="shwas-map-wrap">

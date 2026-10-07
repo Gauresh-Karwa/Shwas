@@ -8,7 +8,7 @@
  *  - Attribution: /api/attribution. Error state shown; never mock text.
  *  - All API keys live in the backend; frontend has none.
  */
-import React, { useState, useCallback, useMemo , useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import './index.css';
 import './App.css';
 import './components/ShwasMap.css';
@@ -33,7 +33,6 @@ const DEFAULT_LAYERS = {
   windFires: true,
   hotspots: false,
   sensors: false,
-  wasteBurn: true,
 };
 
 function cityAqi(stations) {
@@ -84,7 +83,6 @@ export default function App() {
     wardExposure,
     hotspots,
     sensorSites,
-    wasteBurning,
     allForecasts,
     lastUpdated,
     backendDown,
@@ -109,7 +107,7 @@ export default function App() {
   const [hintVisible, setHintVisible] = useState(true);
 
   // ── Time slider
-    // The time slider was removed: the map always shows live readings.
+  // The time slider was removed: the map always shows live readings.
   const forecastOffset = 0;
 
   // 24-hour forecast for a clicked map point (a point has no station)
@@ -194,8 +192,8 @@ export default function App() {
   const selectedContext = selectedStation
     ? { name: selectedStation.name, lat: selectedStation.lat, lon: selectedStation.lon, aqi: selectedStation.aqi }
     : clickEstimate
-    ? { name: clickEstimate.place ? `${clickEstimate.place}, Mumbai` : null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
-    : null;
+      ? { name: clickEstimate.place ? `${clickEstimate.place}, Mumbai` : null, lat: clickEstimate.lat, lon: clickEstimate.lon, aqi: Math.round(clickEstimate.estimated_aqi ?? 0) }
+      : null;
 
   // When backend is down, hide heatmap (it would only show interpolated mock values)
   const effectiveLayers = backendDown
@@ -255,9 +253,9 @@ export default function App() {
             allForecasts={allForecasts}
             windData={attribution?.wind}
             firesData={attribution?.fires}
+            airMass={attribution?.air_mass}
             hotspots={hotspots}
             sensorSites={sensorSites}
-            wasteBurning={wasteBurning}
           />
 
           <Legend />
@@ -270,7 +268,7 @@ export default function App() {
             </div>
           )}
 
-        
+
 
           <div className={`map-hint${hintVisible ? '' : ' hidden'}`} aria-hidden="true">
             Click anywhere on the map to estimate its air quality
@@ -281,7 +279,7 @@ export default function App() {
         <RightPanel
           selectedStation={selectedStation}
           selectedContext={selectedContext}
-          pointPollutants={pointPollutants}          
+          pointPollutants={pointPollutants}
           attribution={attribution}
           loading={attributionLoading}
           error={attributionError}
