@@ -242,6 +242,12 @@ export default function RightPanel({
                           <span>
                             {f.distance_km != null ? `${f.distance_km} km away` : 'Nearby'}
                             {f.frp_mw != null && ` · ${Number(f.frp_mw).toFixed(1)} MW`}
+                            {f.upwind === true && (
+                              <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#b91c1c', background: '#fee2e2', padding: '1px 5px', borderRadius: 4 }}>Upwind</span>
+                            )}
+                            {f.upwind === false && (
+                              <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--muted)' }}>Off path</span>
+                            )}
                           </span>
                         </div>
                       ))}
@@ -252,6 +258,37 @@ export default function RightPanel({
                 )}
               </div>
             </div>
+
+            {/* Air-mass back-trajectory row */}
+            {attribution.air_mass && (
+              <div className="rp-row">
+                <div className="rp-row__icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                    stroke="var(--sage)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </div>
+                <div className="rp-row__body">
+                  <div className="rp-row__label">Air-mass trace ({attribution.air_mass.hours}h)</div>
+                  <div className="rp-row__val" style={{ fontSize: 12, lineHeight: 1.4 }}>
+                    {attribution.air_mass.stagnant ? (
+                      <span>Light winds (~{attribution.air_mass.mean_speed_mps} m/s) with poor dispersion</span>
+                    ) : (
+                      <span>
+                        Arrived from the <strong>{attribution.air_mass.origin?.compass || 'upwind'}</strong> (~{Math.round(attribution.air_mass.path_km)} km)
+                        {attribution.air_mass.over?.sea && ` · ${Math.round(attribution.air_mass.over.marine_hours)}h marine`}
+                      </span>
+                    )}
+                  </div>
+                  {attribution.air_mass.over?.wards?.length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                      Traversed: {attribution.air_mass.over.wards.map(w => w.ward_name).join(' → ')}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* News */}
             {attribution.news?.length > 0 && (
