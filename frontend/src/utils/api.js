@@ -276,3 +276,11 @@ export async function fetchApportionment(stationId, signal) {
   if (!res.ok) throw new Error(`apportionment HTTP ${res.status}`);
   return res.json();
 }
+
+// ── /api/waste/burning ─────────────────────────────────────────────
+export async function fetchWasteBurning(simulate = false, signal) {
+  const url = `${BASE}/api/waste/burning${simulate ? '?simulate=true' : ''}`;
+  const res = await fetch(url, signal ? { signal } : {});
+  if (!res.ok) throw new Error(`waste-burning HTTP ${res.status}`);
+  return res.json();
+}
