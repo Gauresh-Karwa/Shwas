@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   fetchLiveStations, forecastStation, getAttributionFor, checkHealth,
-  fetchWardExposure, fetchHotspots, fetchSensorSites,
+  fetchWardExposure, fetchHotspots, fetchSensorSites, fetchWasteBurning,
 } from '../utils/api';
 import { STATIONS as MOCK_STATIONS, createMockForecast } from '../data/mockData';
 import { loadWardData } from '../data/wardData';
@@ -9,6 +9,7 @@ import { computeWardAqi, mergeWardAqi } from '../utils/geo';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 const REFRESH_MS = 5 * 60 * 1000;
+const SIMULATE_WASTE = import.meta.env.VITE_SIMULATE_WASTE === 'true';
 
 export function useLiveData() {
   const [stations, setStations] = useState([]);
@@ -16,6 +17,7 @@ export function useLiveData() {
   const [wardExposure, setWardExposure] = useState(null);   // /api/wards summary
   const [hotspots, setHotspots] = useState(null);            // /api/analytics/hotspots (null = not loaded yet)
   const [sensorSites, setSensorSites] = useState([]);        // /api/recommendations/sensor-placement
+  const [wasteBurning, setWasteBurning] = useState([]);
   const [allForecasts, setAllForecasts] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
   const [backendDown, setBackendDown] = useState(false);
@@ -88,6 +90,10 @@ export function useLiveData() {
         .then(h => setHotspots(h ?? []))
         .catch(() => { });
 
+      fetchWasteBurning(SIMULATE_WASTE)
+        .then(d => setWasteBurning(d?.sites ?? []))
+        .catch(() => { });      
+
       // Pre-fetch forecasts and sensor sites (initial only)
       // Sensor-site suggestions (initial only).
       // Forecasts are no longer pre-fetched: the chart loads one when you click a place.
@@ -158,6 +164,7 @@ export function useLiveData() {
     wardExposure,
     hotspots,
     sensorSites,
+    wasteBurning,
     allForecasts,
     lastUpdated,
     backendDown,

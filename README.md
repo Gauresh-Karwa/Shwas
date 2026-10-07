@@ -170,21 +170,21 @@ Shwas operates on open-access scientific datasets and APIs. No proprietary crede
 
 The frontend is built with **React 19**, **Vite**, and **MapLibre GL**, engineered for high rendering performance and dynamic state management:
 
-* **Real-Time MapLibre GL Vector Map**: Renders Mumbai's coastline, road networks, 25 CPCB monitoring stations, and 24 BMC administrative ward polygons with GPU-accelerated styling.
-* **Continuous Spatial AQI Interpolation**: Overlays a continuous spatial raster/heatmap calculated via Spatial GNN and live station weights, showing gradients across unmonitored neighborhoods.
-* **Station Drawer & Multi-Pollutant Metrics**: Clicking any station opens an inspection drawer displaying:
+* **Real-Time MapLibre GL Vector Map with Dynamic Context Layers**: Renders Mumbai's coastline, road networks, 25 CPCB monitoring stations, and 24 BMC administrative ward polygons with GPU-accelerated styling. Users can toggle multiple contextual overlays including **Continuous Spatial Heatmaps**, **Census Population Density**, **Slum Coverage**, **NASA Wind/Fires**, and **DBSCAN Hotspots**.
+* **Continuous Spatial AQI Interpolation**: A smooth canvas-rendered spatial raster/heatmap calculated via Spatial GNN and live station weights, masking land dynamically and showing gradients across unmonitored neighborhoods.
+* **Unified Attribution & Inspection Panel (`RightPanel`)**: Clicking any hardware station *or any arbitrary unmonitored point on the map* slides out a comprehensive inspection drawer displaying:
   * **Calculated Sub-Index AQI & CPCB Severity Badge**: Computed via the official Central Pollution Control Board (CPCB) piecewise linear sub-index formula:
     $$I_p = I_{\text{low}} + \frac{I_{\text{high}} - I_{\text{low}}}{B_{\text{high}} - B_{\text{low}}} \times (C_p - B_{\text{low}}), \qquad \text{Overall AQI} = \max_{p \in \mathcal{P}} I_p$$
     *(where $C_p$ is the pollutant concentration, $[B_{\text{low}}, B_{\text{high}}]$ is the breakpoint category bracket, $[I_{\text{low}}, I_{\text{high}}]$ is the AQI sub-index bracket, and $\mathcal{P}$ contains at least 3 criteria pollutants with mandatory $\text{PM}_{2.5}$ or $\text{PM}_{10}$)*.
-  * **Live Criteria Pollutants**: Real-time concentrations for $\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, and $\text{SO}_2$ (in $\mu\text{g/m}^3$) with telemetry timestamp of last ingestion.
+  * **Dynamic Pollutant Bars (`PollutantsBars`)**: A visual breakdown of live criteria pollutants ($\text{PM}_{2.5}$, $\text{PM}_{10}$, $\text{NO}_2$, and $\text{SO}_2$ in $\mu\text{g/m}^3$). Dynamic gradient bars fill relative to CPCB severity thresholds, automatically flagging the "main driver" of the overall AQI.
   * **Fine-Fraction Combustion vs. Crustal Dust Ratio**: Quantifies the particle size distribution via the dimensionless fine-to-coarse ratio:
     $$\eta = \frac{[\text{PM}_{2.5}]}{[\text{PM}_{10}]} \quad (0 \le \eta \le 1)$$
     - **Combustion-Dominated ($\eta \ge 0.65$)**: Fine particulate dominance characteristic of high-temperature combustion: vehicular tailpipe exhaust (diesel/petrol soot), industrial stack flue gas, biomass burning, and secondary nitrate/sulfate aerosols.
     - **Mixed Urban Background ($0.40 < \eta < 0.65$)**: Intermediate composite blend typical of general metropolitan background air, combining dispersed traffic emissions and ambient urban dust.
     - **Dust-Dominated ($\eta \le 0.40$)**: Coarse particulate dominance driven by mechanical shear and suspension: unpaved road dust, construction and demolition debris, quarry dust, or marine coarse aerosol/sea spray.
-* **Lazy-Loaded SARIMAX 24h Forecast Chart**: On-demand hourly time-series chart with upper and lower 95% analytical confidence bounds.
-* **Multi-Modal Causal Attribution Panel**: Live wind direction vectors, NASA FIRMS active fire counts within 50 km, and Gemini LLM natural language air quality summary.
-* **Ward Exposure Analysis & Stacked Cards**: Sidebar displays cleanly formatted Cleanest vs. Most Polluted stations with agency badges (`MPCB`, `IITM`, `BMC`), search/filtering, and total population counts exposed to each CPCB category.
+  * **Natural Language Explanation (`ExplainCard`)**: Presents the Gemini LLM's plain-English synthesis of the complex telemetry, translating wind trajectories, fire data, and chemical ratios into simple, actionable citizen guidance.
+  * **Lazy-Loaded SARIMAX 24h Forecast Chart (`ForecastChart24`)**: On-demand hourly time-series chart with upper and lower 95% analytical confidence bounds. Available for both physical stations and chained predictions at unmonitored map points.
+* **Control Dashboard & Ward Exposure Analysis (`LeftPanel`)**: Sidebar displays cleanly formatted Cleanest vs. Most Polluted stations with agency badges (`MPCB`, `IITM`, `BMC`), search/filtering, map overlay toggles, and total population counts exposed to each CPCB category.
 * **AQI Guide Modal**: Quick reference modal detailing Indian National AQI bands (0–50 Good, 51–100 Satisfactory, 101–200 Moderate, 201–300 Poor, 301–400 Very Poor, 401–500+ Severe).
 
 ---
