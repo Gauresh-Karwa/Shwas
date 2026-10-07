@@ -18,6 +18,8 @@ class FireDetection:
     confidence: str
 
 def get_nearby_fires(map_key: str, center_lat: float, center_lon: float, radius_deg: float=0.5, sensor: str='VIIRS_SNPP_NRT', days: int=1) -> list[FireDetection]:
+    if not map_key or not str(map_key).strip():
+        return []
     west = center_lon - radius_deg
     south = center_lat - radius_deg
     east = center_lon + radius_deg

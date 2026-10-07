@@ -13,6 +13,9 @@ _cache: dict[str, tuple[list, datetime]] = {}
 _CACHE_TTL = timedelta(minutes=5)
 
 
+_cooldown_until: datetime = datetime.min
+
+
 @dataclass
 class NewsResult:
     title: str
@@ -26,6 +29,7 @@ def search_air_quality_news(
     timespan: str = '1d',
     max_records: int = 5,
 ) -> list[NewsResult]:
+    global _cooldown_until
     cache_key = f"{area_name}:{timespan}:{max_records}"
 
     # Return cached results if still fresh
@@ -33,6 +37,12 @@ def search_air_quality_news(
         cached_results, expires_at = _cache[cache_key]
         if datetime.utcnow() < expires_at:
             return cached_results
+
+    # If currently in rate-limit cooldown, return stale cache or empty list
+    if datetime.utcnow() < _cooldown_until:
+        if cache_key in _cache:
+            return _cache[cache_key][0]
+        return []
 
     query = f'"{area_name}" {AQ_RELEVANT_TERMS} sourcecountry:IN'
     params = {
@@ -46,10 +56,18 @@ def search_air_quality_news(
 
     try:
         response = requests.get(BASE_URL, params=params, timeout=15)
+        if response.status_code == 429:
+            _cooldown_until = datetime.utcnow() + timedelta(minutes=5)
+            if cache_key in _cache:
+                return _cache[cache_key][0]
+            return []
         response.raise_for_status()
         data = response.json()
     except (requests.exceptions.RequestException, ValueError) as e:
-        print(f'GDELT news search failed: {type(e).__name__}: {e}')
+        if hasattr(e, 'response') and getattr(e.response, 'status_code', None) == 429:
+            _cooldown_until = datetime.utcnow() + timedelta(minutes=5)
+        else:
+            print(f'GDELT news search notice: {type(e).__name__}: {e}')
         # Return stale cache on failure rather than empty, if available
         if cache_key in _cache:
             return _cache[cache_key][0]

@@ -11,6 +11,8 @@ class WindData:
     observed_at: datetime
 
 def get_wind_data(lat: float, lon: float, api_key: str) -> WindData | None:
+    if not api_key or not str(api_key).strip():
+        return None
     params = {'lat': lat, 'lon': lon, 'appid': api_key, 'units': 'metric'}
     try:
         response = requests.get(BASE_URL, params=params, timeout=15)
