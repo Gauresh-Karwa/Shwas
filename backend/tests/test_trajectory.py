@@ -144,7 +144,7 @@ def test_path_over_land_then_sea_reports_wards_oldest_first_and_sea_hours():
     assert t.wards_crossed[0]["hours_back"] > t.wards_crossed[1]["hours_back"]
     assert t.marine_hours == pytest.approx(1.85, abs=0.25)                # west of 72.80 is sea
     assert t.over_sea is True
-    assert "At least 2 h of that was over the sea" in t.summary()
+    assert "At least 1 h of that was over the sea" in t.summary()      # 1.85 h rounds DOWN, never up
 
 
 def test_path_entirely_over_land_has_no_sea_hours():

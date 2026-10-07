@@ -1,3 +1,4 @@
+import math
 from google import genai
 from google.genai import types
 from app.attribution.weather_client import WindData, compass_direction
@@ -28,7 +29,7 @@ def _trajectory_lines(trace: AirMassTrajectory) -> list[str]:
     else:
         lines.append(f'Air-mass trace (last {trace.hours} h, from hourly wind): the air arrived from the {trace.origin_compass}, travelling about {trace.path_km:.0f} km')
         if trace.over_sea:
-            lines.append(f'At least {trace.marine_hours:.0f} h of that was over the sea west of Mumbai')
+            lines.append(f'At least {math.floor(trace.marine_hours)} h of that was over the sea west of Mumbai')
         if trace.wards_crossed:
             lines.append('It then passed over these wards (earliest first): ' + ', '.join((w['ward_name'] for w in trace.wards_crossed)))
     if trace.fires_on_path:
@@ -60,24 +61,22 @@ def _fallback_explanation(aqi_value: int, category: str, dominant_pollutant: str
     return text
 
 def get_explanation(station_name: str, aqi_value: int, category: str, dominant_pollutant: str, wind: WindData | None, fires: list[FireDetection], news: list[NewsResult], api_key: str='', trajectory: AirMassTrajectory | None=None) -> str:
-    key = api_key or getattr(settings, 'GEMINI_API_KEY', '')
     user_prompt = _build_user_prompt(station_name, aqi_value, category, dominant_pollutant, wind, fires, news, trajectory)
     try:
-        client = genai.Client(api_key=key)
+        client = genai.Client(api_key=settings.GEMINI_API_KEY)
         last_err = None
         for model_name in FALLBACK_MODELS:
             try:
                 response = client.models.generate_content(model=model_name, contents=user_prompt, config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT, temperature=0.7))
                 text = response.text.strip()
                 import re
-                sentences = re.split(r'\.(?!\d)', text)
+                sentences = re.split('\\.(?!\\d)', text)
                 first = sentences[0].strip()
                 return first + '.' if first else text
             except Exception as e:
                 last_err = e
-        if last_err:
-            raise last_err
+                print(f'Model {model_name} failed ({type(e).__name__}), trying next...')
+        raise last_err
     except Exception as e:
-        if not (isinstance(e, ValueError) and "API key" in str(e)):
-            print(f'LLM explanation call notice: {type(e).__name__}: {e}')
+        print(f'LLM explanation call failed ({type(e).__name__}: {e}), using fallback.')
         return _fallback_explanation(aqi_value, category, dominant_pollutant, trajectory)

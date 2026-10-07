@@ -103,7 +103,7 @@ class AirMassTrajectory:
             text = (f"Over the last {self.hours} h the air travelled about {self.path_km:.0f} km "
                     f"to get here, arriving from the {self.origin_compass}.")
             if self.over_sea:
-                text += f" At least {self.marine_hours:.0f} h of that was over the sea to the west."
+                text += f" At least {math.floor(self.marine_hours)} h of that was over the sea to the west."
             elif self.wards_crossed:
                 names = ", ".join(w["ward_name"] for w in self.wards_crossed[-3:])
                 text += f" It passed over {names}."
