@@ -1,0 +1,138 @@
+# Ward Action Engine rules.
+#
+# This file is read at runtime and re-read automatically when it changes on disk
+# (see app/analytics/action_engine.py: get_ruleset). No restart is needed.
+#
+# Each rule links one detected signal to one recommended action.
+#   id                     unique rule id (shown on the action card)
+#   signal                 detector name: waste_burning | traffic | stagnation | inflow |
+#                          forecast_crossing | dust
+#   enabled                false switches the rule off without deleting it
+#   severity               floor severity: high | medium | low. A detector may raise it
+#                          (for example a "likely" burning level or a forecast into "Poor"),
+#                          never lower it.
+#   min_confidence         weakest confidence label that may produce a card:
+#                          indicative < possible < likely < high
+#   advisory               true = informational card; excluded from the priority score
+#   action_title           what to do
+#   time_window            when to do it
+#   rationale              why this action follows from this signal (no double dashes)
+#   department             which BMC/government department executes the action
+#   sop                    standard operating procedure text
+#   compliance_checkpoint  how and when compliance is reported
+#   source_reference       citation for the action. Leave null until it is verified.
+#   source_verified        true only after a person has checked the citation
+#   params                 detector thresholds, overriding the defaults in the code
+version: "1.1"
+rules:
+  - id: RULE_WASTE_BURNING
+    signal: waste_burning
+    enabled: true
+    severity: high
+    min_confidence: possible
+    advisory: false
+    action_title: "Dump-Site Fire Suppression and Perimeter Inspection"
+    time_window: "Immediate: deploy within 2 hours of detection"
+    rationale: "Satellite fire detections at a monitored dump site point to open burning of municipal solid waste. Smoke consists predominantly of fine PM2.5 particles that travel 3 to 8 km downwind, causing elevated AQI across neighboring wards."
+    department: "BMC SWM Flying Squad and Fire Brigade (Ward level)"
+    sop: "Dispatch SWM squad and 1 fire tender to the dump-site perimeter within 60 minutes; apply water mist or dry chemical suppression to active burn areas; barricade the fire zone; initiate an FIR under MCGM solid waste bylaws if unauthorised burning is confirmed; report GPS coordinates to the MCGM Environment Cell."
+    compliance_checkpoint: "Fire-suppression completion confirmed with geo-tagged photo evidence within 3 hours; incident report filed on MCGM 1916 portal by end of shift; AQI re-checked at nearest station 4 hours post-suppression."
+    source_reference: null
+    source_verified: false
+    params: {}
+
+  - id: RULE_FORECAST_CROSSING
+    signal: forecast_crossing
+    enabled: true
+    severity: medium
+    min_confidence: possible
+    advisory: false
+    action_title: "Pre-emptive Dust Control and Public Health Alert Before Forecast AQI Rise"
+    time_window: "Within the next 6 hours (before the forecast peak)"
+    rationale: "The forecast model predicts this ward will move into a worse AQI category. Pre-emptive action before the peak is substantially more cost-effective than reactive response."
+    department: "BMC Ward Works / Environment Dept and MCGM Public Health Dept"
+    sop: "Deploy water tankers on 2 major dust-generating corridors; issue health advisory SMS/WhatsApp notice to ward subscribers via MCGM Aaple Sarkar; alert schools and hospitals in the ward to restrict outdoor activity; coordinate with nearest SAFAR station for live nowcast updates every 2 hours."
+    compliance_checkpoint: "Water-tanker deployment confirmed with time-stamped vehicle log within 1 hour of alert; advisory dissemination receipt (at least 80% of contacts) confirmed within 90 minutes; SAFAR AQI reading logged at forecast peak hour."
+    source_reference: null
+    source_verified: false
+    params:
+      horizon_hours: 6
+      margin_aqi: 5
+      high_from_category: "Poor"
+
+  - id: RULE_STAGNATION
+    signal: stagnation
+    enabled: true
+    severity: medium
+    min_confidence: possible
+    advisory: false
+    action_title: "Enhanced Road Sweeping and Construction-Site Sealing During Stagnation Window"
+    time_window: "Before the forecast peak (next 3 to 6 hours) while winds remain calm"
+    rationale: "Calm winds under 1.5 m/s for 3 or more consecutive hours trap ambient pollutants near ground level. Local sources including construction dust, road resuspension, and vehicle idling have an amplified impact during stagnation events."
+    department: "BMC Ward Works / Roads Dept and BMC SWM Cell"
+    sop: "Increase mechanical road-sweeper frequency to 3 times standard on main arterials; issue emergency Stop-Work Order to all active C&D sites over 500 sqm; deploy anti-smog gun at the 2 highest-traffic junctions; alert ward traffic marshal to adjust signal cycles and restrict heavy vehicles."
+    compliance_checkpoint: "Road-sweeper deployment log (GPS and timestamps) submitted to ward AEE within 2 hours; C&D site stop-work orders confirmed by junior engineer photo verification within 2 hours; anti-smog gun operational log submitted within 4 hours."
+    source_reference: null
+    source_verified: false
+    params:
+      calm_speed_mps: 1.5
+      calm_hours: 3
+      horizon_hours: 12
+      min_rise_aqi: 10
+
+  - id: RULE_TRAFFIC_PEAK
+    signal: traffic
+    enabled: true
+    severity: medium
+    min_confidence: possible
+    advisory: false
+    action_title: "Traffic Signal Optimisation and Anti-Idling Enforcement at Rush-Hour Hotspots"
+    time_window: "Active during peak commuting windows (morning rush 08:00 to 10:30, evening rush 17:00 to 20:00)"
+    rationale: "NO2 or CO is well above its historical baseline at the nearest monitoring station during a rush window, indicating elevated vehicular emissions. Adaptive signal timing and anti-idling patrols provide the fastest mitigation response."
+    department: "Traffic Police Branch and BMC Roads Dept (ITS / TMC Cell)"
+    sop: "Station traffic marshals at 2 or more identified congestion junctions; activate adaptive signal cycles on the ITS/TMC system for the affected corridor; issue penalties to heavy vehicles idling more than 3 minutes near schools, hospitals, and residential areas; divert freight vehicles to alternate routes where feasible."
+    compliance_checkpoint: "Junction traffic-flow log (vehicle count and average wait time) submitted to zone traffic DCP within 1 hour of rush-window conclusion; anti-idling penalty tally reported to ward officer; ITS cycle adjustment confirmed via TMC dashboard."
+    source_reference: null
+    source_verified: false
+    params:
+      morning_start: 8
+      morning_end: 11
+      evening_start: 17
+      evening_end: 21
+      spike_ratio: 1.3
+
+  - id: RULE_DUST
+    signal: dust
+    enabled: true
+    severity: medium
+    min_confidence: possible
+    advisory: false
+    action_title: "Wet Road Sweeping and Construction Material Covering on Dust-Prone Roads"
+    time_window: "Daytime operational hours (08:00 to 18:00) during low humidity"
+    rationale: "Coarse particles dominate with a low PM2.5 to PM10 ratio, dry air, and no recent rainfall, confirming resuspended road and construction dust as the active contributor. Wet sweeping and stockpile coverings are the recommended interventions."
+    department: "BMC Ward Works / Environment Dept (SWM and C&D Cell)"
+    sop: "Deploy 2 water tankers for wet sweeping on identified dusty arterials; inspect at least 3 C&D sites for uncovered stockpiles and issue Notice-to-Comply within 4 hours; apply dust suppressant on unpaved access roads and demolition sites; ensure all construction debris is cleared before end of operational shift."
+    compliance_checkpoint: "Wet-sweeping route completion confirmed with odometer log submitted to AEE within 3 hours; C&D site photo-verified compliance report submitted to ward officer within 4 hours; PM10 reading at nearest station checked 4 hours post-intervention."
+    source_reference: null
+    source_verified: false
+    params:
+      max_fine_fraction: 0.40
+      max_humidity_pct: 70
+      max_precip_mm: 0.1
+      min_pm10_ratio: 1.2
+
+  - id: RULE_INFLOW_ADVISORY
+    signal: inflow
+    enabled: true
+    severity: low
+    min_confidence: possible
+    advisory: true
+    action_title: "Upwind Fire Smoke Advisory: Alert Sensitive Groups"
+    time_window: "During active upwind smoke transit window"
+    rationale: "The back-trajectory of air arriving in this ward passes near active satellite fire detections. Regional smoke can elevate local fine-particle concentrations without any active local combustion."
+    department: "MCGM Public Health Dept and IMD / SAFAR Liaison Cell"
+    sop: "Issue advisory via MCGM Aaple Sarkar and ward WhatsApp groups recommending sensitive groups (children, elderly, respiratory and cardiac patients) avoid prolonged outdoor exposure; coordinate with SAFAR for next hourly AQI nowcast; do not initiate enforcement actions because this is an advisory-only notification."
+    compliance_checkpoint: "Advisory dissemination confirmed (at least 80% of registered ward contacts) within 90 minutes of alert issuance; SAFAR nowcast AQI logged every 2 hours while fires remain upwind; advisory lifted once fire detections clear the back-trajectory path."
+    source_reference: null
+    source_verified: false
+    params: {}

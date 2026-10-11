@@ -11,6 +11,9 @@ class Settings:
     DATABASE_URL: str = os.getenv('DATABASE_URL', 'postgresql://shwas_user:shwas_password@localhost:5432/shwas_db')
     TARGET_CITY: str = os.getenv('TARGET_CITY', 'Mumbai')
     GEMINI_API_KEY: str = os.getenv('GEMINI_API_KEY', '')
+    # 'legacy' = stored values are CPCB sub-indices (dust/traffic signals stay off);
+    # 'official_hourly' = stored values are real concentrations from the official hourly reports.
+    ACTION_DATA_MODE: str = os.getenv('ACTION_DATA_MODE', 'legacy')
 
     def validate(self) -> list[str]:
         missing = []
