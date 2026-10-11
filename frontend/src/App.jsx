@@ -17,12 +17,14 @@ import TopBar from './components/TopBar';
 import LeftPanel, { Legend } from './components/LeftPanel';
 import RightPanel from './components/RightPanel';
 import ShwasMap from './components/ShwasMap';
+import ActionsPage from './components/ActionsPage';
 
 import { getCategory, dominantPollutant } from './utils/aqi';
 import { nearestStation, ptInFeature, estimatePollutantsAt } from './utils/geo';
 import { loadWardData } from './data/wardData';
 import { useLiveData } from './hooks/useLiveData';
 import { forecastCoordinate } from './utils/api';
+import { viewFromHash, hashForView } from './utils/actions';
 
 const DEFAULT_LAYERS = {
   stations: true,
@@ -30,10 +32,11 @@ const DEFAULT_LAYERS = {
   boundaries: true,
   population: false,
   slums: false,
-  windFires: true,
+  windFires: false,
   hotspots: false,
   sensors: false,
 };
+
 
 function cityAqi(stations) {
   const vals = stations.map(s => s.aqi).filter(v => v != null && v > 0);
@@ -95,6 +98,15 @@ export default function App() {
     fetchForecastFor,
     forecastLoadingId,
   } = useLiveData();
+
+  // ── Page: the map (default) or the Ward actions page, kept in the URL hash
+  const [view, setView] = useState(() => viewFromHash(window.location.hash));
+  useEffect(() => {
+    const onHashChange = () => setView(viewFromHash(window.location.hash));
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+  const navigate = useCallback(next => { window.location.hash = hashForView(next); }, []);
 
   // ── Layer toggles
   const [layers, setLayers] = useState(DEFAULT_LAYERS);
@@ -205,9 +217,18 @@ export default function App() {
   const forecastLoading = selectedStation
     ? forecastLoadingId === selectedStation.id && !stationForecast
     : pointForecastLoading;
+  if (view === 'actions') {
+    return (
+      <div className="app">
+        <TopBar lastUpdated={lastUpdated} view={view} onNavigate={navigate} />
+        <ActionsPage />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
-      <TopBar lastUpdated={lastUpdated} />
+      <TopBar lastUpdated={lastUpdated} view={view} onNavigate={navigate} />
 
       {/* Backend-unreachable banner */}
       {backendDown && (
@@ -249,14 +270,16 @@ export default function App() {
               handleSelectStation(full);
             }}
             onClickEstimate={handleClickEstimate}
+            clickEstimate={clickEstimate}
             forecastOffset={forecastOffset}
             allForecasts={allForecasts}
-            windData={attribution?.wind}
-            firesData={attribution?.fires}
-            airMass={attribution?.air_mass}
+            windData={clickEstimate ? null : attribution?.wind}
+            firesData={clickEstimate ? null : attribution?.fires}
+            airMass={clickEstimate ? null : attribution?.air_mass}
             hotspots={hotspots}
             sensorSites={sensorSites}
           />
+
 
           <Legend />
 
