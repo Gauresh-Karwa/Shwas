@@ -61,7 +61,7 @@ def providers(waste=None, forecast=None, winds=None):
         winds=lambda lat, lon: calm if winds is None else winds,
         fires=lambda: [],
         forecast=lambda db, lat, lon: forecast,
-        waste=lambda db, simulate: [{**DEONAR, "simulated": True}] if (simulate and waste is None) else (waste or []),
+        waste=lambda db: waste or [],
     )
 
 
@@ -103,7 +103,7 @@ def test_stagnation_and_crossing_cards_use_forecast_and_wind(client, seeded, mon
     crossing = next(c for c in ward["cards"] if c["rule_id"] == "RULE_FORECAST_CROSSING")
     assert crossing["severity"] == "high"
     assert crossing["forecast_without_action"]["trend"] == "rising"
-    assert crossing["source_reference"] is None                    # unverified citations are never shown
+    assert crossing["source_reference"] is not None and "SAFAR" in crossing["source_reference"]
 
 
 def test_dust_and_traffic_are_off_in_legacy_mode(client, seeded, monkeypatch):
@@ -114,13 +114,14 @@ def test_dust_and_traffic_are_off_in_legacy_mode(client, seeded, monkeypatch):
     assert not signals["RULE_TRAFFIC_PEAK"]["fired"] and "hourly" in signals["RULE_TRAFFIC_PEAK"]["evidence"][0]
 
 
-def test_simulated_burning_is_marked_and_ranks_the_ward_first(client, seeded, monkeypatch):
-    use(monkeypatch, providers())
-    body = client.get("/api/actions?simulate_burning=true").json()
+def test_burning_detection_ranks_the_ward_first(client, seeded, monkeypatch):
+    site = {**DEONAR}
+    use(monkeypatch, providers(waste=[site]))
+    body = client.get("/api/actions").json()
     first = body["wards"][0]
     assert first["ward_id"] == "M/E"
     burn = next(c for c in first["cards"] if c["rule_id"] == "RULE_WASTE_BURNING")
-    assert burn["simulated"] is True and burn["severity"] == "high"
+    assert burn["simulated"] is False and burn["severity"] == "high"
     assert first["priority_score"] == pytest.approx(3.0 * 800_000 * first["current_aqi"] / 100.0, rel=1e-3)
     live_rc = [c for c in by_id(body)["R/C"]["cards"] if not c.get("baseline")]
     assert live_rc == []
@@ -155,12 +156,10 @@ def test_unusable_rules_return_503(client, seeded, monkeypatch):
     assert response.status_code == 503 and "bad file" in response.json()["detail"]
 
 
-def test_rules_endpoint_lists_active_rules_for_audit(client):
-    body = client.get("/api/actions/rules").json()
-    assert body["status"]["rule_count"] == 6 and body["status"]["last_error"] is None
-    assert {r["signal"] for r in body["rules"]} == {"waste_burning", "traffic", "stagnation", "inflow",
-                                                      "forecast_crossing", "dust"}
-    assert all(r["source_verified"] is False and r["source_reference"] is None for r in body["rules"])
+def test_rules_endpoint_is_not_exposed(client):
+    """The internal rules endpoint must not be publicly accessible."""
+    response = client.get("/api/actions/rules")
+    assert response.status_code == 404
 
 
 def test_response_is_cached_between_calls(client, seeded, monkeypatch):
@@ -170,7 +169,7 @@ def test_response_is_cached_between_calls(client, seeded, monkeypatch):
     monkeypatch.setattr(actions_router, "build_ward_contexts", lambda *a, **k: calls.append(1) or real(*a, **k))
     client.get("/api/actions")
     client.get("/api/actions")
-    client.get("/api/actions?simulate_burning=true")
+    client.get("/api/actions?include_signals=true")
     assert len(calls) == 2                      # second plain call was served from the cache
 
 
