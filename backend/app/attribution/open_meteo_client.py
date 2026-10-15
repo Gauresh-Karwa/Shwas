@@ -88,30 +88,7 @@ def get_forecast_weather(lat: float, lon: float, hours: int = 48) -> pd.DataFram
     return df.head(hours).reset_index(drop=True)
 
 
-def get_recent_wind(lat: float, lon: float, hours: int = 12) -> pd.DataFrame:
-    """Hourly 10 m wind for the last `hours` hours up to the current hour (UTC).
-
-    Uses the forecast endpoint's `past_hours` window, which covers the most
-    recent hours that the ERA5 archive does not have yet. Columns: ds,
-    wind_speed_mps, wind_dir_deg (meteorological: the direction wind blows FROM).
-    """
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "hourly": "wind_speed_10m,wind_direction_10m",
-        "past_hours": max(1, min(48, int(hours))),
-        "forecast_hours": 1,
-        "wind_speed_unit": "ms",
-        "timezone": "UTC",
-    }
-    columns = ["ds", "wind_speed_mps", "wind_dir_deg"]
-    try:
-        response = requests.get(FORECAST_URL, params=params, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        hourly = response.json().get("hourly")
-    except requests.exceptions.RequestException as e:
-        print(f"Open-Meteo recent wind request failed: {type(e).__name__}: {e}")
-        return pd.DataFrame(columns=columns)
+def _parse_wind_hourly(hourly: dict | None, columns: list[str]) -> pd.DataFrame:
     if not hourly or "time" not in hourly:
         return pd.DataFrame(columns=columns)
     ds = pd.to_datetime(hourly["time"])
@@ -122,3 +99,59 @@ def get_recent_wind(lat: float, lon: float, hours: int = 12) -> pd.DataFrame:
         "wind_speed_mps": hourly.get("wind_speed_10m"),
         "wind_dir_deg": hourly.get("wind_direction_10m"),
     })
+
+
+def get_recent_wind_batch(
+    coords: list[tuple[float, float]],
+    hours: int = 12,
+) -> dict[tuple[float, float], pd.DataFrame]:
+    """Hourly 10 m wind for multiple coordinates in batch using Open-Meteo's
+    multi-location forecast capability, avoiding concurrent rate-limiting.
+    """
+    columns = ["ds", "wind_speed_mps", "wind_dir_deg"]
+    if not coords:
+        return {}
+
+    results: dict[tuple[float, float], pd.DataFrame] = {}
+    chunk_size = 50
+    for i in range(0, len(coords), chunk_size):
+        chunk = coords[i:i + chunk_size]
+        lat_str = ",".join(f"{c[0]:.4f}" for c in chunk)
+        lon_str = ",".join(f"{c[1]:.4f}" for c in chunk)
+        params = {
+            "latitude": lat_str,
+            "longitude": lon_str,
+            "hourly": "wind_speed_10m,wind_direction_10m",
+            "past_hours": max(1, min(48, int(hours))),
+            "forecast_hours": 1,
+            "wind_speed_unit": "ms",
+            "timezone": "UTC",
+        }
+        try:
+            response = requests.get(FORECAST_URL, params=params, timeout=REQUEST_TIMEOUT)
+            response.raise_for_status()
+            data = response.json()
+            if isinstance(data, list):
+                for coord, item in zip(chunk, data):
+                    results[coord] = _parse_wind_hourly(item.get("hourly"), columns)
+            elif isinstance(data, dict):
+                results[chunk[0]] = _parse_wind_hourly(data.get("hourly"), columns)
+        except requests.exceptions.RequestException as e:
+            print(f"Open-Meteo batch recent wind request failed: {type(e).__name__}: {e}")
+            for coord in chunk:
+                if coord not in results:
+                    results[coord] = pd.DataFrame(columns=columns)
+
+    return results
+
+
+def get_recent_wind(lat: float, lon: float, hours: int = 12) -> pd.DataFrame:
+    """Hourly 10 m wind for the last `hours` hours up to the current hour (UTC).
+
+    Uses the forecast endpoint's `past_hours` window, which covers the most
+    recent hours that the ERA5 archive does not have yet. Columns: ds,
+    wind_speed_mps, wind_dir_deg (meteorological: the direction wind blows FROM).
+    """
+    columns = ["ds", "wind_speed_mps", "wind_dir_deg"]
+    res = get_recent_wind_batch([(lat, lon)], hours=hours)
+    return res.get((lat, lon), pd.DataFrame(columns=columns))
