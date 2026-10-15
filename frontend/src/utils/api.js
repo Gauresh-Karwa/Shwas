@@ -299,8 +299,8 @@ async function failureMessage(res, what) {
   return `${what} HTTP ${res.status}`;
 }
 
-export async function fetchWardActions({ includeSignals = true, signal } = {}) {
-  const params = new URLSearchParams({ include_signals: String(includeSignals) });
+export async function fetchWardActions({ includeSignals = true, lang = 'en', signal } = {}) {
+  const params = new URLSearchParams({ include_signals: String(includeSignals), lang });
   const res = await fetch(`${BASE}/api/actions?${params}`, signal ? { signal } : {});
   if (!res.ok) throw new Error(await failureMessage(res, 'actions'));
   return res.json();
@@ -313,3 +313,15 @@ export async function fetchActionRules(signal) {
   if (!res.ok) throw new Error(await failureMessage(res, 'action-rules'));
   return res.json();
 }
+
+// ── /api/actions/simulate ──────────────────────────────────────────
+// POST { ward_id, scenario, lang } → { simulation: {...delta}, cards: [...], signals: [...] }
+export async function fetchSimulate(wardId, scenario, lang = 'en') {
+  const res = await fetch(`${BASE}/api/actions/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ward_id: wardId, scenario, lang }),
+  });
+  if (!res.ok) throw new Error(await failureMessage(res, 'simulate'));
+  return res.json();
+}
