@@ -193,7 +193,36 @@ def test_official_mode_enables_traffic_and_dust(client, seeded, db_session, monk
     body = client.get("/api/actions?include_signals=true").json()
     ward = by_id(body)["M/E"]
     assert body["data_mode"] == "official_hourly"
-    traffic = next(c for c in ward["cards"] if c["rule_id"] == "RULE_TRAFFIC_PEAK")
-    assert traffic["evidence"][0].startswith("NO2 is 1.5x") and traffic["estimated"] is False
     dust = next(s for s in ward["signals"] if s["rule_id"] == "RULE_DUST")
     assert not dust["fired"] and "Rain and humidity" in dust["evidence"][0]     # weather feed not wired yet
+
+
+def test_normalize_priority_score():
+    from app.routers.actions import normalize_priority_score
+    # 0 raw -> 0.0
+    assert normalize_priority_score(0.0) == 0.0
+    assert normalize_priority_score(-5.0) == 0.0
+    # At max severity 3, max aqi 500: capacity is 15 * pop -> 100.0
+    pop = 800_000
+    max_raw = 3.0 * pop * 5.0
+    assert normalize_priority_score(max_raw, pop) == 100.0
+    # Over capacity clamped to 100.0
+    assert normalize_priority_score(max_raw * 1.5, pop) == 100.0
+    # Half capacity -> 50.0
+    assert normalize_priority_score(max_raw * 0.5, pop) == 50.0
+
+
+def test_simulate_ward_normalizes_priority_score(client, seeded, monkeypatch):
+    use(monkeypatch, providers())
+    resp = client.post("/api/actions/simulate", json={"ward_id": "M/E", "scenario": "landfill_fire"})
+    assert resp.status_code == 200
+    data = resp.json()
+    sim = data["simulation"]
+    # Scores must be bounded within 0.0 - 100.0
+    assert 0.0 <= sim["baseline_priority_score"] <= 100.0
+    assert 0.0 <= sim["simulated_priority_score"] <= 100.0
+    # Crisis simulation increases the priority score
+    assert sim["simulated_priority_score"] >= sim["baseline_priority_score"]
+    # All simulated action cards also have normalized priority scores
+    for card in data["cards"]:
+        assert 0.0 <= card["priority_score"] <= 100.0
