@@ -178,11 +178,11 @@ const LAYERS = [
   { key: 'boundaries', label: 'Boundaries' },
   { key: 'population', label: 'Population' },
   { key: 'slums', label: 'Slum clusters' },
-  { key: 'windFires', label: 'Wind and fires' },
   { key: 'hotspots', label: 'Hotspots (LCB)' },
   { key: 'sensors', label: 'Sensor sites (AI)' },
   { key: 'wasteBurn', label: 'Waste burning (dumps)' },
 ];
+
 
 function LayerToggles({ layers, onChange }) {
   return (

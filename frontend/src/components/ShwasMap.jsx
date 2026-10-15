@@ -225,6 +225,7 @@ export default function ShwasMap({
   selectedStation,
   onStationClick,
   onClickEstimate,
+  clickEstimate = null,
   forecastOffset = 0,    // 0-23 hours; 0 = live
   allForecasts = null, // { [stationId]: forecast[] }
   windData = null, // { speed_mps, direction_deg, compass } | null
@@ -978,7 +979,7 @@ export default function ShwasMap({
     windMarkerRef.current = null;
 
     const coord = selectedStation ?? null;
-    if (!map || !styleReadyRef.current || !windData || !coord || !layers.windFires) return;
+    if (!map || !styleReadyRef.current || !windData || !coord || !layers.windFires || clickEstimate) return;
 
     const { speed_mps, direction_deg } = windData;
     // Arrow rotated so it points in the wind direction (arrow points "to", meteorologically "from" is 180° flip)
@@ -1002,7 +1003,7 @@ export default function ShwasMap({
     windMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'center', offset: [32, 0] })
       .setLngLat([coord.lon, coord.lat])
       .addTo(map);
-  }, [windData, selectedStation, layers.windFires]);
+  }, [windData, selectedStation, layers.windFires, clickEstimate]);
 
   // ── Hotspot markers ──────────────────────────────────────────────
   useEffect(() => {
@@ -1088,9 +1089,10 @@ export default function ShwasMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReadyRef.current) return;
-    const visible = setAirMass(map, airMass, Boolean(layers.windFires));
+    const shouldShow = Boolean(layers.windFires) && !clickEstimate;
+    const visible = setAirMass(map, shouldShow ? airMass : null, shouldShow);
     const bounds = airMassBounds(airMass);
-    if (visible && bounds && airMassFitRef.current !== airMass) {
+    if (visible && bounds && airMassFitRef.current !== airMass && shouldShow) {
       airMassFitRef.current = airMass;
       const origin = airMass.origin;
       if (!map.getBounds().contains([origin.lon, origin.lat])) {
@@ -1101,7 +1103,7 @@ export default function ShwasMap({
         });
       }
     }
-  }, [airMass, layers.windFires]);
+  }, [airMass, layers.windFires, clickEstimate]);
 
   return (
     <div className="shwas-map-wrap">

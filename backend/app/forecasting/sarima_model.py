@@ -3,7 +3,13 @@ import warnings
 from datetime import datetime
 import pandas as pd
 from sqlalchemy.orm import Session
-from statsmodels.tsa.statespace.sarimax import SARIMAX
+try:
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    _SARIMAX_AVAILABLE = True
+except (ImportError, OSError):
+    SARIMAX = None
+    _SARIMAX_AVAILABLE = False
+
 from app.models.db_models import StationAQI
 
 def load_station_series(db: Session, station_id: str) -> pd.DataFrame:
@@ -11,6 +17,8 @@ def load_station_series(db: Session, station_id: str) -> pd.DataFrame:
     return pd.DataFrame({'ds': [r.timestamp for r in records], 'y': [float(r.aqi_value) for r in records]})
 
 def fit_sarima(series: pd.Series) -> object:
+    if not _SARIMAX_AVAILABLE or SARIMAX is None:
+        raise RuntimeError("SARIMAX is unavailable because statsmodels could not be loaded.")
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         model = SARIMAX(series, order=(1, 0, 1), seasonal_order=(1, 0, 0, 24), enforce_stationarity=False, enforce_invertibility=False)
@@ -45,6 +53,8 @@ def series_from_df(df: pd.DataFrame, window_days: int=14) -> pd.Series:
 
 
 def fit_sarimax(series: pd.Series, exog: pd.DataFrame) -> object:
+    if not _SARIMAX_AVAILABLE or SARIMAX is None:
+        raise RuntimeError("SARIMAX is unavailable because statsmodels could not be loaded.")
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         model = SARIMAX(series, exog=exog, order=(1, 0, 1), seasonal_order=(1, 0, 0, 24), enforce_stationarity=False, enforce_invertibility=False)

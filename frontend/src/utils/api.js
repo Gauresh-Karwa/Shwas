@@ -285,3 +285,31 @@ export async function fetchWasteBurning(simulate = false, signal) {
   if (!res.ok) throw new Error(`waste-burning HTTP ${res.status}`);
   return res.json();
 }
+
+// ── /api/actions ───────────────────────────────────────────────────
+// Returns: { generated_at, data_mode, data_notice, simulated, total_wards_evaluated,
+//            wards_with_cards, rules: {version, active}, warnings, wards: [{ ward_id, ward_name,
+//            population, current_aqi, category, nearest_station, distance_to_station_km,
+//            is_estimated, priority_score, cards: [...], signals?: [...] }] }
+async function failureMessage(res, what) {
+  try {
+    const body = await res.json();
+    if (body?.detail) return String(body.detail);
+  } catch { /* no JSON body */ }
+  return `${what} HTTP ${res.status}`;
+}
+
+export async function fetchWardActions({ includeSignals = true, signal } = {}) {
+  const params = new URLSearchParams({ include_signals: String(includeSignals) });
+  const res = await fetch(`${BASE}/api/actions?${params}`, signal ? { signal } : {});
+  if (!res.ok) throw new Error(await failureMessage(res, 'actions'));
+  return res.json();
+}
+
+// ── /api/actions/rules ─────────────────────────────────────────────
+// Returns: { status: {version, rule_count, last_error}, rules: [{ id, signal, severity, ... }] }
+export async function fetchActionRules(signal) {
+  const res = await fetch(`${BASE}/api/actions/rules`, signal ? { signal } : {});
+  if (!res.ok) throw new Error(await failureMessage(res, 'action-rules'));
+  return res.json();
+}

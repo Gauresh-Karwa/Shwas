@@ -133,6 +133,6 @@ def _naive_fallback(
     results = []
     for h in range(steps):
         target = now + timedelta(hours=h + 1)
-        val = seasonal_naive_forecast(db, station_id, target)
+        val = seasonal_naive_forecast(db, station_id, target) if db is not None else None
         results.append(val if val is not None else 0.0)
     return results

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './TopBar.css';
 
-export default function TopBar({ lastUpdated }) {
+export default function TopBar({ lastUpdated, view = 'map', onNavigate }) {
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -39,6 +39,18 @@ export default function TopBar({ lastUpdated }) {
       {/* ── City pill ── */}
       <div className="topbar__centre">
         <span className="topbar__city">Mumbai</span>
+        {onNavigate && (
+          <nav className="topbar__nav" aria-label="Pages">
+            <button type="button" className={`topbar__tab${view === 'map' ? ' topbar__tab--active' : ''}`}
+              aria-current={view === 'map' ? 'page' : undefined} onClick={() => onNavigate('map')}>
+              Map
+            </button>
+            <button type="button" className={`topbar__tab${view === 'actions' ? ' topbar__tab--active' : ''}`}
+              aria-current={view === 'actions' ? 'page' : undefined} onClick={() => onNavigate('actions')}>
+              Ward actions
+            </button>
+          </nav>
+        )}
       </div>
 
       {/* ── Date / time / status ── */}
