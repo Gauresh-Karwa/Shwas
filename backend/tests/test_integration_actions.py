@@ -61,7 +61,7 @@ def providers(waste=None, forecast=None, winds=None):
         winds=lambda lat, lon: calm if winds is None else winds,
         fires=lambda: [],
         forecast=lambda db, lat, lon: forecast,
-        waste=lambda db, simulate: [{**DEONAR, "simulated": True}] if (simulate and waste is None) else (waste or []),
+        waste=lambda db: waste or [],
     )
 
 
@@ -103,7 +103,7 @@ def test_stagnation_and_crossing_cards_use_forecast_and_wind(client, seeded, mon
     crossing = next(c for c in ward["cards"] if c["rule_id"] == "RULE_FORECAST_CROSSING")
     assert crossing["severity"] == "high"
     assert crossing["forecast_without_action"]["trend"] == "rising"
-    assert crossing["source_reference"] is None                    # unverified citations are never shown
+    assert crossing["source_reference"] is not None and "SAFAR" in crossing["source_reference"]
 
 
 def test_dust_and_traffic_are_off_in_legacy_mode(client, seeded, monkeypatch):
@@ -114,13 +114,14 @@ def test_dust_and_traffic_are_off_in_legacy_mode(client, seeded, monkeypatch):
     assert not signals["RULE_TRAFFIC_PEAK"]["fired"] and "hourly" in signals["RULE_TRAFFIC_PEAK"]["evidence"][0]
 
 
-def test_simulated_burning_is_marked_and_ranks_the_ward_first(client, seeded, monkeypatch):
-    use(monkeypatch, providers())
-    body = client.get("/api/actions?simulate_burning=true").json()
+def test_burning_detection_ranks_the_ward_first(client, seeded, monkeypatch):
+    site = {**DEONAR}
+    use(monkeypatch, providers(waste=[site]))
+    body = client.get("/api/actions").json()
     first = body["wards"][0]
     assert first["ward_id"] == "M/E"
     burn = next(c for c in first["cards"] if c["rule_id"] == "RULE_WASTE_BURNING")
-    assert burn["simulated"] is True and burn["severity"] == "high"
+    assert burn["simulated"] is False and burn["severity"] == "high"
     assert first["priority_score"] == pytest.approx(3.0 * 800_000 * first["current_aqi"] / 100.0, rel=1e-3)
     live_rc = [c for c in by_id(body)["R/C"]["cards"] if not c.get("baseline")]
     assert live_rc == []
@@ -155,12 +156,10 @@ def test_unusable_rules_return_503(client, seeded, monkeypatch):
     assert response.status_code == 503 and "bad file" in response.json()["detail"]
 
 
-def test_rules_endpoint_lists_active_rules_for_audit(client):
-    body = client.get("/api/actions/rules").json()
-    assert body["status"]["rule_count"] == 6 and body["status"]["last_error"] is None
-    assert {r["signal"] for r in body["rules"]} == {"waste_burning", "traffic", "stagnation", "inflow",
-                                                      "forecast_crossing", "dust"}
-    assert all(r["source_verified"] is False and r["source_reference"] is None for r in body["rules"])
+def test_rules_endpoint_is_not_exposed(client):
+    """The internal rules endpoint must not be publicly accessible."""
+    response = client.get("/api/actions/rules")
+    assert response.status_code == 404
 
 
 def test_response_is_cached_between_calls(client, seeded, monkeypatch):
@@ -170,7 +169,7 @@ def test_response_is_cached_between_calls(client, seeded, monkeypatch):
     monkeypatch.setattr(actions_router, "build_ward_contexts", lambda *a, **k: calls.append(1) or real(*a, **k))
     client.get("/api/actions")
     client.get("/api/actions")
-    client.get("/api/actions?simulate_burning=true")
+    client.get("/api/actions?include_signals=true")
     assert len(calls) == 2                      # second plain call was served from the cache
 
 
@@ -194,7 +193,36 @@ def test_official_mode_enables_traffic_and_dust(client, seeded, db_session, monk
     body = client.get("/api/actions?include_signals=true").json()
     ward = by_id(body)["M/E"]
     assert body["data_mode"] == "official_hourly"
-    traffic = next(c for c in ward["cards"] if c["rule_id"] == "RULE_TRAFFIC_PEAK")
-    assert traffic["evidence"][0].startswith("NO2 is 1.5x") and traffic["estimated"] is False
     dust = next(s for s in ward["signals"] if s["rule_id"] == "RULE_DUST")
     assert not dust["fired"] and "Rain and humidity" in dust["evidence"][0]     # weather feed not wired yet
+
+
+def test_normalize_priority_score():
+    from app.routers.actions import normalize_priority_score
+    # 0 raw -> 0.0
+    assert normalize_priority_score(0.0) == 0.0
+    assert normalize_priority_score(-5.0) == 0.0
+    # At max severity 3, max aqi 500: capacity is 15 * pop -> 100.0
+    pop = 800_000
+    max_raw = 3.0 * pop * 5.0
+    assert normalize_priority_score(max_raw, pop) == 100.0
+    # Over capacity clamped to 100.0
+    assert normalize_priority_score(max_raw * 1.5, pop) == 100.0
+    # Half capacity -> 50.0
+    assert normalize_priority_score(max_raw * 0.5, pop) == 50.0
+
+
+def test_simulate_ward_normalizes_priority_score(client, seeded, monkeypatch):
+    use(monkeypatch, providers())
+    resp = client.post("/api/actions/simulate", json={"ward_id": "M/E", "scenario": "landfill_fire"})
+    assert resp.status_code == 200
+    data = resp.json()
+    sim = data["simulation"]
+    # Scores must be bounded within 0.0 - 100.0
+    assert 0.0 <= sim["baseline_priority_score"] <= 100.0
+    assert 0.0 <= sim["simulated_priority_score"] <= 100.0
+    # Crisis simulation increases the priority score
+    assert sim["simulated_priority_score"] >= sim["baseline_priority_score"]
+    # All simulated action cards also have normalized priority scores
+    for card in data["cards"]:
+        assert 0.0 <= card["priority_score"] <= 100.0

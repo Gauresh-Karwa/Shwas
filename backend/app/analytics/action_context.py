@@ -58,7 +58,7 @@ class Providers:
     winds: Callable[[float, float], list]                 # (lat, lon) -> [WindHour]
     fires: Callable[[], list]                             # () -> [FireDetection] for the whole city
     forecast: Callable[[Session, float, float], list]     # -> [(hours_ahead, aqi)]
-    waste: Callable[[Session, bool], list[dict]]          # (db, simulate) -> dump-site dicts
+    waste: Callable[[Session], list[dict]]          # (db) -> dump-site dicts
 
 
 def _default_winds(lat: float, lon: float) -> list:
@@ -83,7 +83,7 @@ def _default_forecast(db: Session, lat: float, lon: float) -> list:
 
 def default_providers() -> Providers:
     return Providers(winds=_default_winds, fires=_default_fires,
-                     forecast=_default_forecast, waste=detect_waste_burning)
+                     forecast=_default_forecast, waste=lambda db: detect_waste_burning(db, False))
 
 
 # ── station statistics ────────────────────────────────────────────────────
@@ -237,16 +237,15 @@ class BuildMeta:
     warnings: list[str] = field(default_factory=list)
 
 
-def _safe(fn, *args, default=None):
+def _safe(fn, *args, default=None, **kwargs):
     try:
-        return fn(*args)
+        return fn(*args, **kwargs)
     except Exception:
         return default
 
 
 def build_ward_contexts(db: Session, providers: Providers | None = None,
-                        now: datetime | None = None,
-                        simulate_burning: bool = False) -> tuple[list[WardContext], BuildMeta]:
+                        now: datetime | None = None) -> tuple[list[WardContext], BuildMeta]:
     """One WardContext per ward that has a boundary and a population. Raises LookupError
     when there is no live station data at all."""
     providers = providers or default_providers()
@@ -262,12 +261,19 @@ def build_ward_contexts(db: Session, providers: Providers | None = None,
     from app.attribution.trajectory import WardShape
     shapes = [WardShape(b.ward_id, b.ward_name, b.geometry) for b in boundaries.values()]
 
-    sites = _safe(providers.waste, db, simulate_burning, default=[]) or []
+    sites = _safe(providers.waste, db, default=[]) or []
     fires = _safe(providers.fires, default=[]) or []
 
-    with ThreadPoolExecutor(max_workers=WIND_THREADS) as pool:
-        wind_results = list(pool.map(lambda w: _safe(providers.winds, w.lat, w.lon, default=[]) or [],
-                                     summary.wards))
+    if providers.winds == _default_winds:
+        from app.attribution.attribution_service import batch_wind_hours
+        from app.attribution.trajectory import DEFAULT_HOURS
+        ward_coords = [(w.lat, w.lon) for w in summary.wards]
+        batch_map = _safe(batch_wind_hours, ward_coords, DEFAULT_HOURS, now=now, default={}) or {}
+        wind_results = [batch_map.get((round(w.lat, 2), round(w.lon, 2)), []) for w in summary.wards]
+    else:
+        with ThreadPoolExecutor(max_workers=WIND_THREADS) as pool:
+            wind_results = list(pool.map(lambda w: _safe(providers.winds, w.lat, w.lon, default=[]) or [],
+                                         summary.wards))
 
     stats_cache: dict[str, dict] = {}
     contexts: list[WardContext] = []

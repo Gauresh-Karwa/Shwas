@@ -46,8 +46,38 @@ SIMULATED_MARK = "SIMULATED"       # first word of the evidence line that flags 
 IST_OFFSET = timedelta(hours=5, minutes=30)
 
 
-def format_dynamic_checkpoint(checkpoint: str, now: datetime | None = None) -> str:
-    """Enriches relative checkpoint SLAs with dynamic target timestamps in IST."""
+def _parse_window_end(time_window: str | None, now_ist: datetime) -> datetime:
+    """
+    Extract the last HH:MM from a time_window string like
+    "08:00 to 10:30" or "16:00 to 21:00" and return it as a
+    today-anchored IST datetime. Falls back to now_ist if not parseable.
+    """
+    import re
+    if not time_window:
+        return now_ist
+    # Find all HH:MM patterns and take the last one (end of window)
+    times = re.findall(r'\b(\d{1,2}):(\d{2})\b', time_window)
+    if not times:
+        return now_ist
+    h, m = times[-1]
+    anchor = now_ist.replace(hour=int(h), minute=int(m), second=0, microsecond=0)
+    # If the window end has already passed today, assume it's a future/next-day window
+    # (e.g. 22:00 patrol end when it's 08:00 now — still show the correct time, not +24h)
+    return anchor
+
+
+def format_dynamic_checkpoint(
+    checkpoint: str,
+    now: datetime | None = None,
+    time_window: str | None = None,
+) -> str:
+    """
+    Enriches relative checkpoint SLAs with dynamic target timestamps in IST,
+    anchored to the *end of the operational window* rather than the current time.
+
+    Example: time_window "08:00 to 10:30", SLA "within 1 hour of rush-window
+    conclusion" → target 11:30 IST (10:30 + 1 h), not 09:01 IST (now + 1 h).
+    """
     if not checkpoint:
         return ""
     now_utc = now or datetime.now(timezone.utc)
@@ -55,15 +85,32 @@ def format_dynamic_checkpoint(checkpoint: str, now: datetime | None = None) -> s
         now_utc = now_utc.replace(tzinfo=timezone.utc)
     now_ist = now_utc + IST_OFFSET
 
-    t_60m = (now_ist + timedelta(minutes=60)).strftime("%H:%M")
-    t_90m = (now_ist + timedelta(minutes=90)).strftime("%H:%M")
-    t_2h = (now_ist + timedelta(hours=2)).strftime("%H:%M")
-    t_3h = (now_ist + timedelta(hours=3)).strftime("%H:%M")
-    t_4h = (now_ist + timedelta(hours=4)).strftime("%H:%M")
+    # Anchor: window end if parseable, else current time
+    anchor = _parse_window_end(time_window, now_ist)
+
+    t_60m = (anchor + timedelta(minutes=60)).strftime("%H:%M")
+    t_90m = (anchor + timedelta(minutes=90)).strftime("%H:%M")
+    t_2h  = (anchor + timedelta(hours=2)).strftime("%H:%M")
+    t_3h  = (anchor + timedelta(hours=3)).strftime("%H:%M")
+    t_4h  = (anchor + timedelta(hours=4)).strftime("%H:%M")
+
+    # "within 4 hours of shift start" → anchor to window START (first time in window)
+    # Detect "of shift start" phrasing and re-anchor to the window start instead.
+    import re as _re
+    if _re.search(r'of shift start|of the shift start', checkpoint, _re.IGNORECASE):
+        all_times = _re.findall(r'\b(\d{1,2}):(\d{2})\b', time_window or "")
+        if all_times:
+            hs, ms = all_times[0]
+            start = now_ist.replace(hour=int(hs), minute=int(ms), second=0, microsecond=0)
+            t_4h  = (start + timedelta(hours=4)).strftime("%H:%M")
+            t_3h  = (start + timedelta(hours=3)).strftime("%H:%M")
+            t_2h  = (start + timedelta(hours=2)).strftime("%H:%M")
+            t_90m = (start + timedelta(minutes=90)).strftime("%H:%M")
+            t_60m = (start + timedelta(minutes=60)).strftime("%H:%M")
 
     res = checkpoint
     if "within 90 minutes" in res and "target" not in res:
-        res = res.replace("within 90 minutes", f"within 90 minutes (target deadline: {t_90m} IST)")
+        res = res.replace("within 90 minutes", f"within 90 minutes (target: {t_90m} IST)")
     if "within 1 hour" in res and "target" not in res:
         res = res.replace("within 1 hour", f"within 1 hour (target: {t_60m} IST)")
     if "within 2 hours" in res and "target" not in res:
@@ -816,17 +863,65 @@ def build_baseline_cards(
 ) -> list[ActionCard]:
     """Standard ward mitigation cards. Always generated; the UI can show or hide them
     depending on whether live signal cards already cover the domain."""
+    from app.analytics.action_reasoner import WARD_ZONES
     ward_slug = slugify(ctx.ward_id)
+    zone_desc, neighborhoods, corridors = WARD_ZONES.get(
+        ctx.ward_id,
+        ("Mumbai Municipal Region", ["ward center"], ["primary municipal roads"]),
+    )
+    nh_str = ", ".join(neighborhoods[:2])
+    road_str = ", ".join(corridors[:2])
     cards: list[ActionCard] = []
+
     for bm in BASELINE_MITIGATIONS:
-        # Enrich evidence with live ward numbers so it is never completely generic
         evidence: list[str] = []
-        if ctx.aqi:
-            evidence.append(f"Current ward AQI: {ctx.aqi:.0f} ({ctx.category})")
-        if ctx.population:
-            evidence.append(f"{ctx.population:,} residents exposed to ambient air quality conditions")
-        if not evidence:
-            evidence.append("Standard ward risk profile: Mumbai BMC operational schedule")
+        action_title = bm.action_title
+        rationale = bm.rationale
+
+        if bm.card_id_suffix == "dust_suppression":
+            action_title = f"Hotspot Dust Suppression and C&D Site Enforcement ({ctx.ward_name})"
+            evidence.append(f"Ward {ctx.ward_id} AQI {ctx.aqi:.0f} ({ctx.category}) affecting {ctx.population:,} residents")
+            if ctx.nearest_station_name and ctx.station_distance_km is not None:
+                evidence.append(f"Monitoring reference: {ctx.nearest_station_name} ({ctx.station_distance_km:.1f} km away)")
+            else:
+                evidence.append(f"Active C&D sites and unpaved corridors along {road_str}")
+            rationale = (
+                f"Ward {ctx.ward_id} ({ctx.ward_name}), located in {zone_desc}, experiences elevated mineral dust resuspension "
+                f"from construction and road development. With {ctx.population:,} residents exposed to {ctx.category} conditions "
+                f"(AQI {ctx.aqi:.0f}), routine high-pressure water spraying and strict enforcement of the BMC 28-point C&D guidelines "
+                f"along {road_str} reduces fugitive PM10 loadings by 30% to 60% on dry days."
+            )
+
+        elif bm.card_id_suffix == "traffic_corridor":
+            action_title = f"Traffic Corridor Decongestion and Anti-Idling Patrol ({ctx.ward_name})"
+            evidence.append(f"Transit corridor exhaust density along {road_str}")
+            evidence.append(f"{ctx.population:,} residents exposed to commute-hour emissions in {nh_str}")
+            rationale = (
+                f"Transit arteries across Ward {ctx.ward_id} ({road_str}) experience intense stop-and-go vehicular exhaust during "
+                f"morning (08:00 to 10:30) and evening (17:00 to 20:00) rush hours. Targeted signal timing optimization and heavy-vehicle "
+                f"anti-idling patrols reduce corridor NO2 and CO exposure for {ctx.population:,} residents by 10% to 20%."
+            )
+
+        elif bm.card_id_suffix == "swm_vigilance":
+            action_title = f"Refuse and Biomass Burning Vigilance Squad ({ctx.ward_name})"
+            evidence.append(f"Post-market evening refuse accumulation across {nh_str}")
+            evidence.append(f"Evening boundary layer deceleration trapping combustion aerosols")
+            rationale = (
+                f"Open burning of municipal solid waste and dry biomass is a key controllable source of fine-particle pollution in "
+                f"Ward {ctx.ward_id} ({ctx.ward_name}) during calm evening hours. Dedicated SWM flying squad patrols across {nh_str} "
+                f"extinguish unauthorized fires at secondary collection points and open plots before smoke accumulates near ground level."
+            )
+
+        elif bm.card_id_suffix == "met_inversion_advisory":
+            action_title = f"Evening Meteorological Inversion Advisory ({ctx.ward_name})"
+            evidence.append(f"Diurnal sea-to-land breeze transition (16:00 to 21:00 IST) across {zone_desc}")
+            evidence.append(f"Expected evening AQI increase of 15 to 40 points above current level {ctx.aqi:.0f}")
+            rationale = (
+                f"Between 16:00 and 20:00, wind speeds across {ctx.ward_name} decrease during the sea-to-land breeze switch, forming a shallow "
+                f"surface inversion layer. This inversion restricts vertical dispersion, raising localized AQI by 15 to 40 points. Proactive "
+                f"advisories via Aaple Sarkar and ward channels ensure {ctx.population:,} residents, particularly sensitive cohorts, avoid "
+                f"prolonged outdoor exposure during the inversion window."
+            )
 
         cards.append(ActionCard(
             card_id=f"act-{ward_slug}-baseline-{bm.card_id_suffix}",
@@ -838,18 +933,20 @@ def build_baseline_cards(
             advisory=bm.advisory,
             estimated=False,
             simulated=False,
-            action_title=bm.action_title,
+            action_title=action_title,
             time_window=bm.time_window,
-            rationale=bm.rationale,
+            rationale=rationale,
             evidence=evidence,
             forecast_without_action=forecast,
             source_reference=None,
             source_verified=False,
             priority_score=0.0,
-            summary=f"{bm.action_title}. Standard operational mitigation. When: {bm.time_window}.",
+            summary=f"{action_title}. Standard operational mitigation. When: {bm.time_window}.",
             department=bm.department,
             sop=bm.sop,
-            compliance_checkpoint=format_dynamic_checkpoint(bm.compliance_checkpoint),
+            compliance_checkpoint=format_dynamic_checkpoint(
+                bm.compliance_checkpoint, time_window=bm.time_window
+            ),
             baseline=True,
         ))
     return cards
@@ -861,7 +958,7 @@ def _max_severity(a: str, b: str | None) -> str:
     return a if SEVERITY_WEIGHT[a] >= SEVERITY_WEIGHT[b] else b
 
 
-def evaluate_ward(ctx: WardContext, ruleset: RuleSet, include_signals: bool = False) -> WardResult:
+def evaluate_ward(ctx: WardContext, ruleset: RuleSet, include_signals: bool = False, lang: str = "en") -> WardResult:
     factor = _distance_factor(ctx.station_distance_km)
     is_estimated = ctx.station_distance_km is None or ctx.station_distance_km > ESTIMATED_DISTANCE_KM
     ward_slug = slugify(ctx.ward_id)
@@ -901,9 +998,14 @@ def evaluate_ward(ctx: WardContext, ruleset: RuleSet, include_signals: bool = Fa
             evidence=evidence,
             time_window=rule.time_window,
             baseline_rationale=rule.rationale,
+            station_name=ctx.nearest_station_name,
+            station_distance_km=ctx.station_distance_km,
+            lang=lang,
         )
         time_window = signal.details.get("dynamic_window") or rule.time_window
-        checkpoint = format_dynamic_checkpoint(rule.compliance_checkpoint)
+        checkpoint = format_dynamic_checkpoint(
+            rule.compliance_checkpoint, time_window=time_window
+        )
         cards.append(ActionCard(
             card_id=f"act-{ward_slug}-{rule.id.lower()}",
             rule_id=rule.id, signal=rule.signal, severity=severity,
@@ -941,9 +1043,9 @@ def evaluate_ward(ctx: WardContext, ruleset: RuleSet, include_signals: bool = Fa
 
 
 def evaluate_all(contexts: list[WardContext], ruleset: RuleSet | None = None,
-                 include_signals: bool = False) -> list[WardResult]:
+                 include_signals: bool = False, lang: str = "en") -> list[WardResult]:
     rules = ruleset if ruleset is not None else get_ruleset()
-    results = [evaluate_ward(ctx, rules, include_signals) for ctx in contexts]
+    results = [evaluate_ward(ctx, rules, include_signals, lang=lang) for ctx in contexts]
     exposure = {c.ward_id: c.population * c.aqi for c in contexts}
     results.sort(key=lambda r: (-r.priority_score, -exposure.get(r.ward_id, 0.0)))
     return results

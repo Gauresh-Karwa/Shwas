@@ -62,6 +62,21 @@ export function formatKm(km) {
     return `${Number(km).toFixed(1)} km`;
 }
 
+export function formatPriorityScore(score, population) {
+    if (score == null || Number.isNaN(Number(score))) return '0';
+    let val = Number(score);
+    // Defensive client-side normalization if an unnormalized raw score (> 1000) was supplied
+    if (val > 1000) {
+        if (population && Number(population) > 0) {
+            val = (val / (15.0 * Number(population))) * 100.0;
+        } else {
+            val = (val / 9000000.0) * 100.0;
+        }
+    }
+    const clamped = Math.max(0, Math.min(100, val));
+    return clamped % 1 === 0 ? clamped.toString() : clamped.toFixed(1);
+}
+
 export function trendInfo(trend) {
     if (trend === 'rising') return { arrow: '+', text: 'rising' };
     if (trend === 'falling') return { arrow: '-', text: 'falling' };

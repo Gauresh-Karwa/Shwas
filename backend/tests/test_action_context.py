@@ -179,7 +179,7 @@ def fake_providers(winds=None, forecast=None, waste=None, fires=None, wind_error
         winds=winds_fn,
         fires=lambda: fires or [],
         forecast=lambda db, lat, lon: forecast,
-        waste=lambda db, simulate: waste or [],
+        waste=lambda db: waste or [],
     )
 
 
